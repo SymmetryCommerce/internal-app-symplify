@@ -159,6 +159,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         mutation fileCreate($files: [FileCreateInput!]!) {
           fileCreate(files: $files) {
             files {
+              id
+              fileStatus
               ... on MediaImage { image { url } }
               ... on GenericFile { url }
             }
@@ -176,12 +178,53 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const fileErrors = fileJson.data.fileCreate.userErrors;
       if (fileErrors?.length) throw new Error(fileErrors[0].message);
 
-      const createdFile = fileJson.data.fileCreate.files[0];
-      // Prefer the Shopify CDN URL; fall back to the staged resourceUrl
-      const newUrl: string =
-        createdFile?.image?.url ?? createdFile?.url ?? target.resourceUrl;
+      const createdFileId: string = fileJson.data.fileCreate.files[0]?.id;
+      if (!createdFileId) throw new Error("No file ID returned from fileCreate");
 
-      // 5. Swap old src → new CDN URL in the article HTML
+      // 5. Poll until Shopify finishes processing and exposes the real CDN URL
+      let newUrl: string | null = null;
+      const maxAttempts = 15;
+      const delayMs = 1500;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise((r) => setTimeout(r, delayMs));
+
+        const pollRes = await admin.graphql(
+          `
+          query getFile($id: ID!) {
+            node(id: $id) {
+              ... on MediaImage {
+                fileStatus
+                image { url }
+              }
+              ... on GenericFile {
+                fileStatus
+                url
+              }
+            }
+          }
+          `,
+          { variables: { id: createdFileId } }
+        );
+        const pollJson = await pollRes.json();
+        const node = pollJson.data?.node;
+        const status: string = node?.fileStatus ?? "";
+        const candidateUrl: string = node?.image?.url ?? node?.url ?? "";
+
+        if (
+          status === "READY" &&
+          candidateUrl.startsWith("https://cdn.shopify.com")
+        ) {
+          newUrl = candidateUrl;
+          break;
+        }
+
+        if (status === "FAILED") throw new Error("Shopify file processing failed");
+      }
+
+      if (!newUrl) throw new Error("Timed out waiting for Shopify CDN URL");
+
+      // 6. Swap old src → new CDN URL in the article HTML
       const updatedBody = body.split(imgSrc).join(newUrl);
 
       return { success: true, newUrl, imgIndex, updatedBody };
