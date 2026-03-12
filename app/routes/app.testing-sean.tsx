@@ -45,17 +45,39 @@ type ImgInfo = {
   index: number;
 };
 
+type MetaobjectField = {
+  key: string;
+  value: string | null;
+  type: string;
+};
+
+type MetaobjectEntry = {
+  id: string;
+  handle: string;
+  fields: MetaobjectField[];
+};
+
+type MetaobjectGroup = {
+  type: string;
+  name: string;
+  entries: MetaobjectEntry[];
+};
+
 /* =========================
    LOADER (READ)
 ========================= */
 
 export const loader = async ({
   request,
-}: LoaderFunctionArgs): Promise<{ blogs: BlogEdge[] }> => {
+}: LoaderFunctionArgs): Promise<{
+  blogs: BlogEdge[];
+  metaobjectGroups: MetaobjectGroup[];
+}> => {
   const { admin } = await authenticate.admin(request);
 
-  const response = await admin.graphql(`
-    query GetBlogs {
+  // Step 1: fetch blogs + definition types in one query
+  const firstRes = await admin.graphql(`
+    query GetBlogsAndDefinitions {
       blogs(first: 5) {
         edges {
           node {
@@ -76,14 +98,54 @@ export const loader = async ({
           }
         }
       }
+      metaobjectDefinitions(first: 20) {
+        edges {
+          node {
+            type
+            name
+          }
+        }
+      }
     }
   `);
 
-  const json = await response.json();
+  const firstJson = await firstRes.json();
+  const blogs: BlogEdge[] = firstJson.data.blogs.edges;
+  const definitionEdges: { node: { type: string; name: string } }[] =
+    firstJson.data.metaobjectDefinitions.edges;
 
-  return {
-    blogs: json.data.blogs.edges,
-  };
+  // Step 2: fetch actual metaobject entries for each type
+  const metaobjectGroups: MetaobjectGroup[] = await Promise.all(
+    definitionEdges.map(async ({ node: def }) => {
+      const res = await admin.graphql(
+        `
+        query GetMetaobjects($type: String!) {
+          metaobjects(type: $type, first: 20) {
+            edges {
+              node {
+                id
+                handle
+                fields {
+                  key
+                  value
+                  type
+                }
+              }
+            }
+          }
+        }
+        `,
+        { variables: { type: def.type } }
+      );
+      const json = await res.json();
+      const entries: MetaobjectEntry[] = json.data.metaobjects.edges.map(
+        (e: { node: MetaobjectEntry }) => e.node
+      );
+      return { type: def.type, name: def.name, entries };
+    })
+  );
+
+  return { blogs, metaobjectGroups };
 };
 
 /* =========================
@@ -278,44 +340,225 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 ========================= */
 
 export default function TestingPageSean() {
-  const { blogs = [] } = useLoaderData<typeof loader>();
+  const { blogs = [], metaobjectGroups = [] } =
+    useLoaderData<typeof loader>();
 
   return (
     <div style={{ padding: "2rem" }}>
-      <h1>Blog Information</h1>
+      <h1>Content Overview</h1>
 
-      {blogs.map((blogEdge) => {
-        const blog = blogEdge.node;
-        const articles = blog.articles?.edges ?? [];
+      {/* ── Blogs ── */}
+      <details style={sectionStyle}>
+        <summary style={summaryStyle}>
+          📝 Blogs ({blogs.length})
+        </summary>
 
-        return (
-          <div key={blog.id} style={{ marginBottom: "3rem" }}>
-            <h2>{blog.title}</h2>
-            <p>
-              <strong>Handle:</strong> {blog.handle}
-            </p>
+        <div style={{ padding: "1rem 0" }}>
+          {blogs.map((blogEdge) => {
+            const blog = blogEdge.node;
+            const articles = blog.articles?.edges ?? [];
 
-            {articles.map((articleEdge) => {
-              const article = articleEdge.node;
+            return (
+              <details key={blog.id} style={nestedSectionStyle}>
+                <summary style={nestedSummaryStyle}>
+                  {blog.title}{" "}
+                  <span style={badgeStyle}>{articles.length} articles</span>
+                </summary>
 
-              return (
-                <>
-                  <s-section heading="Multiple pages" key={article.id}>
-                    <h3>{article.title}</h3>
-                    <p>{article.summary}</p>
+                <div style={{ padding: "0.5rem 0 0.5rem 1rem" }}>
+                  <p style={{ margin: "0 0 0.5rem", color: "#555", fontSize: "0.85rem" }}>
+                    Handle: <code>{blog.handle}</code>
+                  </p>
 
-                    <ArticleImageAltEditor article={article} />
-                  </s-section>
-                  <br></br>
-                </>
-              );
-            })}
-          </div>
-        );
-      })}
+                  {articles.map((articleEdge) => {
+                    const article = articleEdge.node;
+                    return (
+                      <details key={article.id} style={articleSectionStyle}>
+                        <summary style={nestedSummaryStyle}>
+                          {article.title}
+                        </summary>
+                        <div style={{ padding: "0.75rem 0 0.5rem 1rem" }}>
+                          {article.summary && (
+                            <p style={{ margin: "0 0 0.75rem", color: "#555" }}>
+                              {article.summary}
+                            </p>
+                          )}
+                          <ArticleImageAltEditor article={article} />
+                        </div>
+                      </details>
+                    );
+                  })}
+
+                  {articles.length === 0 && (
+                    <p style={{ color: "#999", fontStyle: "italic" }}>No articles</p>
+                  )}
+                </div>
+              </details>
+            );
+          })}
+
+          {blogs.length === 0 && (
+            <p style={{ color: "#999", fontStyle: "italic" }}>No blogs found</p>
+          )}
+        </div>
+      </details>
+
+      {/* ── Metaobjects ── */}
+      <details style={sectionStyle}>
+        <summary style={summaryStyle}>
+          🗂 Metaobjects ({metaobjectGroups.length} types)
+        </summary>
+
+        <div style={{ padding: "1rem 0" }}>
+          {metaobjectGroups.map((group) => (
+            <details key={group.type} style={nestedSectionStyle}>
+              <summary style={nestedSummaryStyle}>
+                {group.name}{" "}
+                <span style={badgeStyle}>
+                  <code style={{ fontSize: "0.78rem" }}>{group.type}</code>
+                </span>{" "}
+                <span style={badgeStyle}>{group.entries.length} entries</span>
+              </summary>
+
+              <div style={{ padding: "0.5rem 0 0.5rem 1rem" }}>
+                {group.entries.length === 0 ? (
+                  <p style={{ color: "#999", fontStyle: "italic" }}>No entries</p>
+                ) : (
+                  group.entries.map((entry) => (
+                    <details key={entry.id} style={articleSectionStyle}>
+                      <summary style={nestedSummaryStyle}>
+                        <code style={{ fontSize: "0.82rem" }}>{entry.handle}</code>
+                      </summary>
+                      <div style={{ padding: "0.5rem 0 0.5rem 1rem" }}>
+                        <table style={tableStyle}>
+                          <thead>
+                            <tr>
+                              <th style={thStyle}>Field</th>
+                              <th style={thStyle}>Type</th>
+                              <th style={thStyle}>Value</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {entry.fields.map((field) => (
+                              <tr key={field.key}>
+                                <td style={tdStyle}>
+                                  <code style={{ fontSize: "0.82rem" }}>{field.key}</code>
+                                </td>
+                                <td style={tdStyle}>
+                                  <span style={typeBadgeStyle}>{field.type}</span>
+                                </td>
+                                <td style={{ ...tdStyle, wordBreak: "break-all", maxWidth: "320px" }}>
+                                  {field.value ?? <span style={{ color: "#aaa" }}>—</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+                  ))
+                )}
+              </div>
+            </details>
+          ))}
+
+          {metaobjectGroups.length === 0 && (
+            <p style={{ color: "#999", fontStyle: "italic" }}>No metaobjects found</p>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
+
+/* =========================
+   STYLES
+========================= */
+
+const sectionStyle: React.CSSProperties = {
+  marginBottom: "1.5rem",
+  border: "1px solid #d1d5db",
+  borderRadius: "8px",
+  overflow: "hidden",
+};
+
+const summaryStyle: React.CSSProperties = {
+  padding: "0.85rem 1.25rem",
+  fontWeight: 600,
+  fontSize: "1.05rem",
+  cursor: "pointer",
+  backgroundColor: "#f3f4f6",
+  userSelect: "none",
+  listStyle: "none",
+  display: "flex",
+  alignItems: "center",
+  gap: "0.5rem",
+};
+
+const nestedSectionStyle: React.CSSProperties = {
+  marginBottom: "0.5rem",
+  border: "1px solid #e5e7eb",
+  borderRadius: "6px",
+  overflow: "hidden",
+};
+
+const articleSectionStyle: React.CSSProperties = {
+  marginBottom: "0.4rem",
+  border: "1px solid #ede9fe",
+  borderRadius: "5px",
+  overflow: "hidden",
+};
+
+const nestedSummaryStyle: React.CSSProperties = {
+  padding: "0.6rem 1rem",
+  fontWeight: 500,
+  cursor: "pointer",
+  backgroundColor: "#f9fafb",
+  userSelect: "none",
+  listStyle: "none",
+  display: "flex",
+  alignItems: "center",
+  gap: "0.5rem",
+};
+
+const badgeStyle: React.CSSProperties = {
+  fontSize: "0.75rem",
+  fontWeight: 400,
+  color: "#6b7280",
+  backgroundColor: "#e5e7eb",
+  padding: "0.1rem 0.5rem",
+  borderRadius: "999px",
+};
+
+const typeBadgeStyle: React.CSSProperties = {
+  fontSize: "0.78rem",
+  backgroundColor: "#ede9fe",
+  color: "#5b21b6",
+  padding: "0.1rem 0.5rem",
+  borderRadius: "4px",
+  fontFamily: "monospace",
+};
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  fontSize: "0.88rem",
+};
+
+const thStyle: React.CSSProperties = {
+  textAlign: "left",
+  padding: "0.5rem 0.75rem",
+  backgroundColor: "#f3f4f6",
+  borderBottom: "1px solid #e5e7eb",
+  fontWeight: 600,
+  color: "#374151",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "0.45rem 0.75rem",
+  borderBottom: "1px solid #f3f4f6",
+  verticalAlign: "middle",
+};
 
 /* =========================
    IMAGE EDITOR COMPONENT
