@@ -63,6 +63,35 @@ type MetaobjectGroup = {
   entries: MetaobjectEntry[];
 };
 
+const IMG_TAG_REGEX = /<img\b[^>]*>/gi;
+
+function replaceImgSrcByIndex(html: string, targetIndex: number, newSrc: string): string {
+  let currentIndex = -1;
+  let replaced = false;
+
+  const updated = html.replace(IMG_TAG_REGEX, (tag) => {
+    currentIndex += 1;
+    if (currentIndex !== targetIndex) return tag;
+
+    replaced = true;
+    const quotedSrcRegex = /\bsrc\s*=\s*(['"])(.*?)\1/i;
+    if (quotedSrcRegex.test(tag)) {
+      return tag.replace(quotedSrcRegex, (_m, quote: string) => `src=${quote}${newSrc}${quote}`);
+    }
+
+    const unquotedSrcRegex = /\bsrc\s*=\s*([^\s"'=<>`]+)/i;
+    if (unquotedSrcRegex.test(tag)) {
+      return tag.replace(unquotedSrcRegex, `src="${newSrc}"`);
+    }
+
+    if (tag.endsWith("/>")) return `${tag.slice(0, -2)} src="${newSrc}" />`;
+    if (tag.endsWith(">")) return `${tag.slice(0, -1)} src="${newSrc}">`;
+    return tag;
+  });
+
+  return replaced ? updated : html;
+}
+
 /* =========================
    LOADER (READ)
 ========================= */
@@ -286,8 +315,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       if (!newUrl) throw new Error("Timed out waiting for Shopify CDN URL");
 
-      // 6. Swap old src → new CDN URL in the article HTML
-      const updatedBody = body.split(imgSrc).join(newUrl);
+      // 6. Replace the exact image's src by index (more reliable than raw string replacement)
+      let updatedBody = replaceImgSrcByIndex(body, imgIndex, newUrl);
+      if (updatedBody === body) {
+        updatedBody = body.split(imgSrc).join(newUrl);
+      }
 
       // 7. Persist the updated HTML back to the article
       const updateRes = await admin.graphql(
@@ -979,6 +1011,7 @@ function MetaobjectFieldRow({
   onImported?: (key: string, newUrl: string) => void;
 }) {
   const fetcher = useFetcher();
+  const [importError, setImportError] = useState<string | null>(null);
   // Use overrideValue from parent (set by batch import) when available
   const currentValue = overrideValue !== undefined ? overrideValue : field.value;
 
@@ -992,7 +1025,10 @@ function MetaobjectFieldRow({
     if (prev !== "idle" && fetcher.state === "idle" && fetcher.data) {
       const data = fetcher.data as any;
       if (data.success && data.fieldKey === field.key && data.metaobjectId === metaobjectId) {
+        setImportError(null);
         onImported?.(field.key, data.newUrl);
+      } else if (data.success === false) {
+        setImportError(data.error ?? "Import failed");
       }
     }
   }, [fetcher.state, fetcher.data, field.key, metaobjectId, onImported]);
@@ -1000,6 +1036,7 @@ function MetaobjectFieldRow({
   const showImportButton = isExternalImageUrl(currentValue);
 
   function handleImport() {
+    setImportError(null);
     fetcher.submit(
       {
         intent: "importMetaobjectImage",
@@ -1024,28 +1061,30 @@ function MetaobjectFieldRow({
           <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
             <span>{currentValue}</span>
             {showImportButton && (
-              <button
-                onClick={handleImport}
-                disabled={isImporting}
-                style={{
-                  alignSelf: "flex-start",
-                  padding: "0.2rem 0.6rem",
-                  fontSize: "0.78rem",
-                  cursor: isImporting ? "not-allowed" : "pointer",
-                  opacity: isImporting ? 0.6 : 1,
-                }}
-              >
-                {isImporting ? "Importing…" : "Import to Shopify CDN"}
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <button
+                  onClick={handleImport}
+                  disabled={isImporting}
+                  style={{
+                    alignSelf: "flex-start",
+                    padding: "0.2rem 0.6rem",
+                    fontSize: "0.78rem",
+                    cursor: isImporting ? "not-allowed" : "pointer",
+                    opacity: isImporting ? 0.6 : 1,
+                  }}
+                >
+                  {isImporting ? "Importing…" : "Import to Shopify CDN"}
+                </button>
+                {importError && (
+                  <span style={{ fontSize: "0.78rem", color: "red" }}>
+                    ⚠ {importError}
+                  </span>
+                )}
+              </div>
             )}
             {!showImportButton && currentValue.includes("cdn.shopify.com") && IMAGE_EXTENSIONS.test(currentValue) && (
               <span style={{ fontSize: "0.75rem", color: "#2e7d32", fontWeight: 600 }}>
                 ✓ Already on Shopify CDN
-              </span>
-            )}
-            {fetcher.state === "idle" && (fetcher.data as any)?.success === false && (
-              <span style={{ fontSize: "0.78rem", color: "red" }}>
-                ⚠ {(fetcher.data as any).error}
               </span>
             )}
           </div>
