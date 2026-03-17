@@ -98,7 +98,7 @@ export const loader = async ({
           }
         }
       }
-      metaobjectDefinitions(first: 20) {
+      metaobjectDefinitions(first: 100) {
         edges {
           node {
             type
@@ -120,7 +120,7 @@ export const loader = async ({
       const res = await admin.graphql(
         `
         query GetMetaobjects($type: String!) {
-          metaobjects(type: $type, first: 20) {
+          metaobjects(type: $type, first: 100) {
             edges {
               node {
                 id
@@ -1170,7 +1170,7 @@ function ArticleImageAltEditor({ article }: { article: ArticleNode }) {
   const [images, setImages] = useState<ImgInfo[]>([]);
   const [modifiedHtml, setModifiedHtml] = useState(article.body ?? "");
   const [importingIndex, setImportingIndex] = useState<number | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
+  const [importErrors, setImportErrors] = useState<Record<number, string>>({});
 
   useEffect(() => {
     setImages(extractImagesFromHtml(modifiedHtml));
@@ -1184,15 +1184,27 @@ function ArticleImageAltEditor({ article }: { article: ArticleNode }) {
 
     if (prev !== "idle" && importFetcher.state === "idle" && importFetcher.data) {
       const data = importFetcher.data as any;
+      const completedIndex = importingIndex;
       if (data.success) {
         setModifiedHtml(data.updatedBody);
-        setImportError(null);
+        if (completedIndex !== null) {
+          setImportErrors((cur) => {
+            const next = { ...cur };
+            delete next[completedIndex];
+            return next;
+          });
+        }
       } else {
-        setImportError(data.error ?? "Import failed");
+        if (completedIndex !== null) {
+          setImportErrors((cur) => ({
+            ...cur,
+            [completedIndex]: data.error ?? "Import failed",
+          }));
+        }
       }
       setImportingIndex(null);
     }
-  }, [importFetcher.state, importFetcher.data]);
+  }, [importFetcher.state, importFetcher.data, importingIndex]);
 
   function updateAlt(index: number, newAlt: string) {
     const doc = new DOMParser().parseFromString(modifiedHtml, "text/html");
@@ -1204,7 +1216,11 @@ function ArticleImageAltEditor({ article }: { article: ArticleNode }) {
 
   function importImage(index: number) {
     setImportingIndex(index);
-    setImportError(null);
+    setImportErrors((cur) => {
+      const next = { ...cur };
+      delete next[index];
+      return next;
+    });
     importFetcher.submit(
       {
         intent: "importImage",
@@ -1283,25 +1299,26 @@ function ArticleImageAltEditor({ article }: { article: ArticleNode }) {
                 ✓ Already on Shopify CDN
               </span>
             ) : (
-              <button
-                onClick={() => importImage(i)}
-                disabled={isImporting}
-                style={{
-                  padding: "0.3rem 0.75rem",
-                  cursor: isImporting ? "not-allowed" : "pointer",
-                  opacity: isImporting ? 0.6 : 1,
-                }}
-              >
-                {importingIndex === i && isImporting
-                  ? "Importing…"
-                  : "Import to Shopify CDN"}
-              </button>
-            )}
-
-            {importingIndex === i && importError && (
-              <p style={{ color: "red", fontSize: "0.8rem", marginTop: "0.4rem" }}>
-                ⚠ {importError}
-              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <button
+                  onClick={() => importImage(i)}
+                  disabled={isImporting}
+                  style={{
+                    padding: "0.3rem 0.75rem",
+                    cursor: isImporting ? "not-allowed" : "pointer",
+                    opacity: isImporting ? 0.6 : 1,
+                  }}
+                >
+                  {importingIndex === i && isImporting
+                    ? "Importing…"
+                    : "Import to Shopify CDN"}
+                </button>
+                {importErrors[i] && (
+                  <span style={{ color: "red", fontSize: "0.8rem" }}>
+                    {importErrors[i]}
+                  </span>
+                )}
+              </div>
             )}
           </div>
         </div>
