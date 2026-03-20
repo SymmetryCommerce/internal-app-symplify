@@ -22,6 +22,7 @@ export default function App() {
         <s-link href="/app/testing-sean">Testing page Sean</s-link>
         <s-link href="/app/testing">Testing page</s-link>
         <s-link href="/app/import">Import</s-link>
+        <s-link href="/app/sitemap">Sitemap</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
