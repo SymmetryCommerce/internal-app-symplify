@@ -5,7 +5,6 @@ import {
   type LoaderFunctionArgs,
   type ActionFunctionArgs,
 } from "react-router";
-import { readFile } from "node:fs/promises";
 
 import { authenticate } from "../shopify.server";
 
@@ -67,38 +66,6 @@ type GiftCard = {
     currencyCode: string;
   };
 };
-
-const GIFT_CARD_CSV_PATH = "C:\\Users\\Owner\\Downloads\\export (2) - export (2).csv";
-const GIFT_CARD_IMPORT_NOTE = "Imported from Square";
-
-function parseCsvLine(line: string): string[] {
-  const values: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      const next = line[i + 1];
-      if (inQuotes && next === '"') {
-        current += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-    if (ch === "," && !inQuotes) {
-      values.push(current);
-      current = "";
-      continue;
-    }
-    current += ch;
-  }
-
-  values.push(current);
-  return values;
-}
 
 /* =========================
    LOADER (READ)
@@ -260,82 +227,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       success: true,
       giftCardCode: createJson.data.giftCardCreate.giftCardCode,
       giftCard: createJson.data.giftCardCreate.giftCard,
-    };
-  }
-
-  if (intent === "importGiftCardsFromCsv") {
-    const csvText = await readFile(GIFT_CARD_CSV_PATH, "utf8");
-    const lines = csvText
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    if (lines.length < 2) {
-      return { success: false, error: "CSV has no gift card rows." };
-    }
-
-    const headers = parseCsvLine(lines[0]);
-    const codeIndex = headers.indexOf("Gift Card PAN");
-    const centsIndex = headers.indexOf("Balance Cents");
-
-    if (codeIndex === -1 || centsIndex === -1) {
-      return {
-        success: false,
-        error: "CSV must include 'Gift Card PAN' and 'Balance Cents' columns.",
-      };
-    }
-
-    let importedCount = 0;
-    const errors: string[] = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      const row = parseCsvLine(lines[i]);
-      const code = (row[codeIndex] ?? "").trim();
-      const centsRaw = (row[centsIndex] ?? "").trim();
-      const cents = Number.parseInt(centsRaw, 10);
-
-      if (!code || Number.isNaN(cents)) {
-        errors.push(`Row ${i + 1}: invalid code or Balance Cents`);
-        continue;
-      }
-
-      const createRes = await admin.graphql(
-        `
-        mutation giftCardCreate($input: GiftCardCreateInput!) {
-          giftCardCreate(input: $input) {
-            giftCard { id }
-            giftCardCode
-            userErrors { message field }
-          }
-        }
-        `,
-        {
-          variables: {
-            input: {
-              code,
-              initialValue: (cents / 100).toFixed(2),
-              note: GIFT_CARD_IMPORT_NOTE,
-            },
-          },
-        }
-      );
-
-      const createJson = await createRes.json();
-      const userErrors = createJson.data?.giftCardCreate?.userErrors ?? [];
-      if (userErrors.length > 0) {
-        errors.push(`Row ${i + 1} (${code}): ${userErrors[0].message}`);
-        continue;
-      }
-
-      importedCount += 1;
-    }
-
-    return {
-      success: errors.length === 0,
-      importedCount,
-      failedCount: errors.length,
-      totalCount: lines.length - 1,
-      errors: errors.slice(0, 20),
     };
   }
 
@@ -894,17 +785,6 @@ export default function ImportPage() {
   const addGiftCardData = addGiftCardFetcher.data as
     | { success?: boolean; error?: string; giftCardCode?: string }
     | undefined;
-  const importFromCsvFetcher = useFetcher();
-  const importFromCsvData = importFromCsvFetcher.data as
-    | {
-        success?: boolean;
-        error?: string;
-        importedCount?: number;
-        failedCount?: number;
-        totalCount?: number;
-        errors?: string[];
-      }
-    | undefined;
 
   return (
     <div style={{ padding: "2rem" }}>
@@ -971,41 +851,6 @@ export default function ImportPage() {
                 Gift card created successfully ({addGiftCardData.giftCardCode ?? "code hidden"}). Refresh to see it in the list.
               </p>
             )}
-
-            <div style={{ marginTop: "1rem" }}>
-              <importFromCsvFetcher.Form method="post">
-                <input type="hidden" name="intent" value="importGiftCardsFromCsv" />
-                <button type="submit" disabled={importFromCsvFetcher.state !== "idle"}>
-                  {importFromCsvFetcher.state !== "idle"
-                    ? "Importing from spreadsheet..."
-                    : "Import Gift Cards from Spreadsheet"}
-                </button>
-              </importFromCsvFetcher.Form>
-
-              {importFromCsvData?.error && (
-                <p style={{ color: "red", marginTop: "0.75rem" }}>{importFromCsvData.error}</p>
-              )}
-
-              {importFromCsvData && !importFromCsvData.error && (
-                <p
-                  style={{
-                    color: importFromCsvData.failedCount ? "red" : "green",
-                    marginTop: "0.75rem",
-                  }}
-                >
-                  Imported {importFromCsvData.importedCount ?? 0} of{" "}
-                  {importFromCsvData.totalCount ?? 0} gift cards.
-                </p>
-              )}
-
-              {(importFromCsvData?.errors?.length ?? 0) > 0 && (
-                <div style={{ color: "red", fontSize: "0.85rem" }}>
-                  {importFromCsvData?.errors?.map((msg, idx) => (
-                    <div key={idx}>- {msg}</div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </s-section>
