@@ -39,6 +39,17 @@ type BlogEdge = {
   node: BlogNode;
 };
 
+type PageNode = {
+  id: string;
+  title: string;
+  handle: string;
+  body?: string;
+};
+
+type PageEdge = {
+  node: PageNode;
+};
+
 type ImgInfo = {
   src: string;
   alt: string;
@@ -100,6 +111,7 @@ export const loader = async ({
   request,
 }: LoaderFunctionArgs): Promise<{
   blogs: BlogEdge[];
+  pages: PageEdge[];
   metaobjectGroups: MetaobjectGroup[];
 }> => {
   const { admin } = await authenticate.admin(request);
@@ -127,6 +139,16 @@ export const loader = async ({
           }
         }
       }
+      pages(first: 100) {
+        edges {
+          node {
+            id
+            title
+            handle
+            body
+          }
+        }
+      }
       metaobjectDefinitions(first: 100) {
         edges {
           node {
@@ -140,6 +162,7 @@ export const loader = async ({
 
   const firstJson = await firstRes.json();
   const blogs: BlogEdge[] = firstJson.data.blogs.edges;
+  const pages: PageEdge[] = firstJson.data.pages.edges;
   const definitionEdges: { node: { type: string; name: string } }[] =
     firstJson.data.metaobjectDefinitions.edges;
 
@@ -174,7 +197,7 @@ export const loader = async ({
     })
   );
 
-  return { blogs, metaobjectGroups };
+  return { blogs, pages, metaobjectGroups };
 };
 
 /* =========================
@@ -185,6 +208,144 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
+
+  async function uploadExternalImageToShopifyCdn(imgSrc: string): Promise<string> {
+    const imageRes = await fetch(imgSrc);
+    if (!imageRes.ok) {
+      throw new Error(`Failed to fetch image: ${imageRes.statusText}`);
+    }
+
+    const imageBuffer = await imageRes.arrayBuffer();
+    const mimeType =
+      imageRes.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+    const fileSize = imageBuffer.byteLength.toString();
+    const filename =
+      decodeURIComponent(imgSrc.split("/").pop()?.split("?")[0] ?? "image.jpg") ||
+      "image.jpg";
+
+    const stagedRes = await admin.graphql(
+      `
+      mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+        stagedUploadsCreate(input: $input) {
+          stagedTargets {
+            url
+            resourceUrl
+            parameters { name value }
+          }
+          userErrors { field message }
+        }
+      }
+      `,
+      {
+        variables: {
+          input: [
+            { filename, mimeType, resource: "FILE", fileSize, httpMethod: "PUT" },
+          ],
+        },
+      }
+    );
+    const stagedJson = await stagedRes.json();
+    const stagedErrors = stagedJson.data.stagedUploadsCreate.userErrors;
+    if (stagedErrors?.length) {
+      throw new Error(stagedErrors[0].message);
+    }
+    const target = stagedJson.data.stagedUploadsCreate.stagedTargets[0];
+
+    const uploadRes = await fetch(target.url, {
+      method: "PUT",
+      body: imageBuffer,
+      headers: { "Content-Type": mimeType, "Content-Length": fileSize },
+    });
+    if (!uploadRes.ok) {
+      throw new Error(`Upload failed: ${uploadRes.statusText}`);
+    }
+
+    const fileCreateRes = await admin.graphql(
+      `
+      mutation fileCreate($files: [FileCreateInput!]!) {
+        fileCreate(files: $files) {
+          files {
+            id
+            fileStatus
+            ... on MediaImage { image { url } }
+            ... on GenericFile { url }
+          }
+          userErrors { field message }
+        }
+      }
+      `,
+      {
+        variables: {
+          files: [{ originalSource: target.resourceUrl, contentType: "IMAGE" }],
+        },
+      }
+    );
+    const fileJson = await fileCreateRes.json();
+    const fileErrors = fileJson.data.fileCreate.userErrors;
+    if (fileErrors?.length) {
+      throw new Error(fileErrors[0].message);
+    }
+
+    const createdFileId: string = fileJson.data.fileCreate.files[0]?.id;
+    if (!createdFileId) {
+      throw new Error("No file ID returned from fileCreate");
+    }
+
+    for (let attempt = 0; attempt < 15; attempt++) {
+      await new Promise((r) => setTimeout(r, 1500));
+
+      const pollRes = await admin.graphql(
+        `
+        query getFile($id: ID!) {
+          node(id: $id) {
+            ... on MediaImage {
+              fileStatus
+              image { url }
+            }
+            ... on GenericFile {
+              fileStatus
+              url
+            }
+          }
+        }
+        `,
+        { variables: { id: createdFileId } }
+      );
+      const pollJson = await pollRes.json();
+      const node = pollJson.data?.node;
+      const status: string = node?.fileStatus ?? "";
+      const candidateUrl: string = node?.image?.url ?? node?.url ?? "";
+
+      if (status === "READY" && candidateUrl.startsWith("https://cdn.shopify.com")) {
+        return candidateUrl;
+      }
+
+      if (status === "FAILED") {
+        throw new Error("Shopify file processing failed");
+      }
+    }
+
+    throw new Error("Timed out waiting for Shopify CDN URL");
+  }
+
+  async function updatePageBody(pageId: string, body: string) {
+    const updateRes = await admin.graphql(
+      `
+      mutation pageUpdate($id: ID!, $page: PageUpdateInput!) {
+        pageUpdate(id: $id, page: $page) {
+          page { id body }
+          userErrors { field message }
+        }
+      }
+      `,
+      { variables: { id: pageId, page: { body } } }
+    );
+    const updateJson = await updateRes.json();
+    const updateErrors = updateJson.data.pageUpdate.userErrors;
+    if (updateErrors?.length) {
+      throw new Error(updateErrors[0].message);
+    }
+  }
 
   /* ------ Import an external image to Shopify CDN ------ */
   if (intent === "importImage") {
@@ -342,6 +503,79 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const message = err instanceof Error ? err.message : "Unknown error";
       return { success: false, error: message };
     }
+  }
+
+  /* ------ Import an external image to Shopify CDN for a page ------ */
+  if (intent === "importPageImage") {
+    const imgSrc = formData.get("imgSrc") as string;
+    const pageId = formData.get("pageId") as string;
+    const imgIndex = parseInt(formData.get("imgIndex") as string, 10);
+    const body = formData.get("body") as string;
+
+    try {
+      const newUrl = await uploadExternalImageToShopifyCdn(imgSrc);
+
+      let updatedBody = replaceImgSrcByIndex(body, imgIndex, newUrl);
+      if (updatedBody === body) {
+        updatedBody = body.split(imgSrc).join(newUrl);
+      }
+
+      await updatePageBody(pageId, updatedBody);
+      return { success: true, pageId, newUrl, imgIndex, updatedBody };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return { success: false, error: message };
+    }
+  }
+
+  /* ------ Import ALL external images across all selected pages ------ */
+  if (intent === "importAllPageImages") {
+    const pagesJson = formData.get("pages") as string;
+    const pages: { pageId: string; body: string; images: { index: number; src: string }[] }[] =
+      JSON.parse(pagesJson);
+
+    const updatedPages: { pageId: string; updatedBody: string; importedCount: number }[] = [];
+    const errors: string[] = [];
+
+    for (const page of pages) {
+      let workingBody = page.body;
+      let importedCount = 0;
+
+      for (const image of page.images) {
+        try {
+          const newUrl = await uploadExternalImageToShopifyCdn(image.src);
+
+          const nextBody = replaceImgSrcByIndex(workingBody, image.index, newUrl);
+          workingBody = nextBody === workingBody
+            ? workingBody.split(image.src).join(newUrl)
+            : nextBody;
+          importedCount += 1;
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "Unknown error";
+          errors.push(`${page.pageId}/image-${image.index}: ${message}`);
+        }
+      }
+
+      if (importedCount > 0) {
+        try {
+          await updatePageBody(page.pageId, workingBody);
+          updatedPages.push({
+            pageId: page.pageId,
+            updatedBody: workingBody,
+            importedCount,
+          });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "Unknown error";
+          errors.push(`${page.pageId}: ${message}`);
+        }
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      updatedPages,
+      errors: errors.length > 0 ? errors : undefined,
+    };
   }
 
   /* ------ Import an external image for a metaobject field ------ */
@@ -738,8 +972,64 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 ========================= */
 
 export default function TestingPageSean() {
-  const { blogs = [], metaobjectGroups = [] } =
+  const { blogs = [], pages = [], metaobjectGroups = [] } =
     useLoaderData<typeof loader>();
+
+  const pageBatchFetcher = useFetcher();
+  const [pageBodies, setPageBodies] = useState<Record<string, string>>(() =>
+    Object.fromEntries(pages.map((edge) => [edge.node.id, edge.node.body ?? ""]))
+  );
+
+  const isImportingAllPages = pageBatchFetcher.state !== "idle";
+
+  const prevPageBatchState = React.useRef(pageBatchFetcher.state);
+  useEffect(() => {
+    const prev = prevPageBatchState.current;
+    prevPageBatchState.current = pageBatchFetcher.state;
+
+    if (prev !== "idle" && pageBatchFetcher.state === "idle" && pageBatchFetcher.data) {
+      const data = pageBatchFetcher.data as any;
+      if (data.updatedPages?.length) {
+        setPageBodies((cur) => {
+          const next = { ...cur };
+          for (const page of data.updatedPages) {
+            next[page.pageId] = page.updatedBody;
+          }
+          return next;
+        });
+      }
+    }
+  }, [pageBatchFetcher.state, pageBatchFetcher.data]);
+
+  const allImportablePages = pages
+    .map((edge) => {
+      const page = edge.node;
+      const body = pageBodies[page.id] ?? page.body ?? "";
+      const images = extractImagesFromHtml(body)
+        .filter((img) => isExternalImageUrl(img.src))
+        .map((img) => ({ index: img.index, src: img.src }));
+
+      return { pageId: page.id, body, images };
+    })
+    .filter((p) => p.images.length > 0);
+
+  function handleImportAllPageImages() {
+    if (allImportablePages.length === 0) return;
+    pageBatchFetcher.submit(
+      {
+        intent: "importAllPageImages",
+        pages: JSON.stringify(allImportablePages),
+      },
+      { method: "post" }
+    );
+  }
+
+  function handlePageBodyUpdated(pageId: string, updatedBody: string) {
+    setPageBodies((cur) => ({
+      ...cur,
+      [pageId]: updatedBody,
+    }));
+  }
 
   return (
     <div style={{ padding: "2rem" }}>
@@ -814,6 +1104,56 @@ export default function TestingPageSean() {
 
           {metaobjectGroups.length === 0 && (
             <p style={{ color: "#999", fontStyle: "italic" }}>No metaobjects found</p>
+          )}
+        </div>
+      </details>
+
+      {/* ── Pages ── */}
+      <details style={sectionStyle}>
+        <summary style={summaryStyle}>
+          📄 Pages ({pages.length})
+          {allImportablePages.length > 0 && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                handleImportAllPageImages();
+              }}
+              disabled={isImportingAllPages}
+              style={{
+                marginLeft: "auto",
+                padding: "0.25rem 0.8rem",
+                fontSize: "0.8rem",
+                cursor: isImportingAllPages ? "not-allowed" : "pointer",
+                opacity: isImportingAllPages ? 0.6 : 1,
+              }}
+            >
+              {isImportingAllPages
+                ? "Importing…"
+                : `Import All Page Images (${allImportablePages.reduce((sum, p) => sum + p.images.length, 0)})`}
+            </button>
+          )}
+        </summary>
+
+        {((pageBatchFetcher.data as any)?.errors?.length ?? 0) > 0 && (
+          <div style={{ padding: "0.5rem 1rem", color: "red", fontSize: "0.82rem" }}>
+            {(pageBatchFetcher.data as any).errors.map((e: string, i: number) => (
+              <div key={i}>⚠ {e}</div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ padding: "1rem 0" }}>
+          {pages.map((pageEdge) => (
+            <PageImageMigrationEditor
+              key={pageEdge.node.id}
+              page={pageEdge.node}
+              body={pageBodies[pageEdge.node.id] ?? pageEdge.node.body ?? ""}
+              onBodyUpdated={handlePageBodyUpdated}
+            />
+          ))}
+
+          {pages.length === 0 && (
+            <p style={{ color: "#999", fontStyle: "italic" }}>No pages found</p>
           )}
         </div>
       </details>
@@ -1097,6 +1437,159 @@ function MetaobjectFieldRow({
 }
 
 /* =========================
+   PAGE IMAGE MIGRATION
+========================= */
+
+function PageImageMigrationEditor({
+  page,
+  body,
+  onBodyUpdated,
+}: {
+  page: PageNode;
+  body: string;
+  onBodyUpdated: (pageId: string, updatedBody: string) => void;
+}) {
+  const importFetcher = useFetcher();
+  const [importingIndex, setImportingIndex] = useState<number | null>(null);
+  const [importErrors, setImportErrors] = useState<Record<number, string>>({});
+
+  const images = extractImagesFromHtml(body);
+  const externalCount = images.filter((img) => isExternalImageUrl(img.src)).length;
+  const isImporting = importFetcher.state !== "idle";
+
+  const prevImportState = React.useRef(importFetcher.state);
+  useEffect(() => {
+    const prev = prevImportState.current;
+    prevImportState.current = importFetcher.state;
+
+    if (prev !== "idle" && importFetcher.state === "idle" && importFetcher.data) {
+      const data = importFetcher.data as any;
+      const completedIndex = importingIndex;
+
+      if (data.success && data.pageId === page.id) {
+        onBodyUpdated(page.id, data.updatedBody);
+        if (completedIndex !== null) {
+          setImportErrors((cur) => {
+            const next = { ...cur };
+            delete next[completedIndex];
+            return next;
+          });
+        }
+      } else if (data.success === false && completedIndex !== null) {
+        setImportErrors((cur) => ({
+          ...cur,
+          [completedIndex]: data.error ?? "Import failed",
+        }));
+      }
+
+      setImportingIndex(null);
+    }
+  }, [importFetcher.state, importFetcher.data, importingIndex, page.id, onBodyUpdated]);
+
+  function importImage(index: number) {
+    setImportingIndex(index);
+    setImportErrors((cur) => {
+      const next = { ...cur };
+      delete next[index];
+      return next;
+    });
+
+    importFetcher.submit(
+      {
+        intent: "importPageImage",
+        pageId: page.id,
+        imgSrc: images[index].src,
+        imgIndex: String(index),
+        body,
+      },
+      { method: "post" }
+    );
+  }
+
+  return (
+    <details style={nestedSectionStyle}>
+      <summary style={nestedSummaryStyle}>
+        {page.title}
+        <span style={badgeStyle}>
+          <code style={{ fontSize: "0.78rem" }}>{page.handle}</code>
+        </span>
+        <span style={badgeStyle}>{images.length} images</span>
+        <span style={badgeStyle}>{externalCount} external</span>
+      </summary>
+
+      <div style={{ padding: "0.5rem 1rem 1rem" }}>
+        {images.length === 0 ? (
+          <p style={{ color: "#999", fontStyle: "italic" }}>No images found</p>
+        ) : (
+          images.map((img, i) => {
+            const alreadyOnCdn = img.src.includes("cdn.shopify.com");
+            return (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  gap: "1rem",
+                  alignItems: "flex-start",
+                  marginBottom: "1rem",
+                  padding: "0.8rem",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "6px",
+                  backgroundColor: "#fff",
+                }}
+              >
+                <img
+                  src={img.src}
+                  alt={img.alt}
+                  style={{ width: 120, height: 80, objectFit: "contain", flexShrink: 0 }}
+                />
+
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontFamily: "monospace",
+                      fontSize: "0.75rem",
+                      color: "#555",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {img.src}
+                  </p>
+
+                  <div style={{ marginTop: "0.45rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    {alreadyOnCdn ? (
+                      <span style={{ fontSize: "0.8rem", color: "#2e7d32", fontWeight: 600 }}>
+                        ✓ Already on Shopify CDN
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => importImage(i)}
+                        disabled={isImporting}
+                        style={{
+                          padding: "0.3rem 0.75rem",
+                          cursor: isImporting ? "not-allowed" : "pointer",
+                          opacity: isImporting ? 0.6 : 1,
+                        }}
+                      >
+                        {importingIndex === i && isImporting ? "Importing…" : "Import to Shopify CDN"}
+                      </button>
+                    )}
+
+                    {importErrors[i] && (
+                      <span style={{ color: "red", fontSize: "0.8rem" }}>{importErrors[i]}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </details>
+  );
+}
+
+/* =========================
    STYLES
 ========================= */
 
@@ -1192,12 +1685,21 @@ const tdStyle: React.CSSProperties = {
 function extractImagesFromHtml(html?: string | null): ImgInfo[] {
   if (!html) return [];
 
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const imgs = Array.from(doc.getElementsByTagName("img"));
+  const tags = html.match(IMG_TAG_REGEX) ?? [];
 
-  return imgs.map((img, i) => ({
-    src: img.getAttribute("src") ?? "",
-    alt: img.getAttribute("alt") ?? "",
+  const readAttr = (tag: string, attr: "src" | "alt") => {
+    const quoted = new RegExp(`\\b${attr}\\s*=\\s*([\"'])(.*?)\\1`, "i");
+    const quotedMatch = tag.match(quoted);
+    if (quotedMatch) return quotedMatch[2] ?? "";
+
+    const unquoted = new RegExp(`\\b${attr}\\s*=\\s*([^\\s\"'=<>` + "`" + `]+)`, "i");
+    const unquotedMatch = tag.match(unquoted);
+    return unquotedMatch?.[1] ?? "";
+  };
+
+  return tags.map((tag, i) => ({
+    src: readAttr(tag, "src"),
+    alt: readAttr(tag, "alt"),
     index: i,
   }));
 }
