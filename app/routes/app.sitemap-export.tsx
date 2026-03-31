@@ -1,5 +1,8 @@
 import { useState } from "react";
 
+const SITEMAP_URL =
+  "https://test-1111111111111111111111111111111111711111111111128302.myshopify.com/sitemap.xml";
+
 export default function SitemapViewer() {
   const [sitemapXml, setSitemapXml] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -10,14 +13,17 @@ export default function SitemapViewer() {
     setError(null);
 
     try {
-      const res = await fetch("https://test-1111111111111111111111111111111111711111111111128302.myshopify.com/sitemap.xml"); // or full shop URL
-      console.log(res);
+      const res = await fetch(`${SITEMAP_URL}`, {
+        headers: {
+          Accept: "application/xml,text/xml;q=0.9,*/*;q=0.8",
+        },
+      });
       if (!res.ok) throw new Error("Failed to fetch sitemap");
 
       const xmlText = await res.text();
       setSitemapXml(xmlText);
-    } catch (err: any) {
-      setError(err.message || "Unknown error");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
