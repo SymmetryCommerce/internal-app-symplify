@@ -58,8 +58,8 @@ export default function MetaobjectExport() {
     <div style={{ padding: "1rem", maxWidth: "700px" }}>
       <h1>Metaobject Export</h1>
       <p>
-        Export all metaobjects into a CSV where each row is one metaobject entry and columns are
-        organized by core fields and metaobject fields.
+        Export all metaobjects into a CSV where each row is one metaobject entry with core columns:
+        type, name, ID, and handle.
       </p>
 
       <button type="button" onClick={handleExport} disabled={isExporting}>
