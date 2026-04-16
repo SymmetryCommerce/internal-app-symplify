@@ -1126,7 +1126,7 @@ export default function TestingPageSean() {
             );
           })}
 
-          {blogs.length === 0 && <s-text>No blogs found</s-text>}
+          {blogs.length === 0 && <s-text color="subdued"><em>No blogs found</em></s-text>}
         </s-stack>
       </s-section>
 
@@ -1136,15 +1136,15 @@ export default function TestingPageSean() {
           🗂 Metaobjects ({metaobjectGroups.length} types)
         </s-heading>
 
-        <div style={{ padding: "1rem 0" }}>
+        <s-stack direction="block" gap="base">
           {metaobjectGroups.map((group) => (
             <MetaobjectGroupView key={group.type} group={group} />
           ))}
 
           {metaobjectGroups.length === 0 && (
-            <p style={{ color: "#999", fontStyle: "italic" }}>No metaobjects found</p>
+            <s-text color="subdued"><em>No metaobjects found</em></s-text>
           )}
-        </div>
+        </s-stack>
       </s-section>
 
       {/* ── Pages ── */}
@@ -1192,7 +1192,7 @@ export default function TestingPageSean() {
           ))}
 
           {pages.length === 0 && (
-            <p style={{ color: "#999", fontStyle: "italic" }}>No pages found</p>
+            <s-text color="subdued"><em>No pages found</em></s-text>
           )}
         </div>
       </s-section>
@@ -1558,7 +1558,7 @@ function PageImageMigrationEditor({
 
       <div style={{ padding: "0.5rem 1rem 1rem" }}>
         {images.length === 0 ? (
-          <p style={{ color: "#999", fontStyle: "italic" }}>No images found</p>
+          <s-text color="subdued"><em>No images found</em></s-text>
         ) : (
           images.map((img, i) => {
             const alreadyOnCdn = img.src.includes("cdn.shopify.com");
@@ -1865,6 +1865,13 @@ function ArticleImageAltEditor({
   const isShopifyCdn = (src: string) => src.includes("cdn.shopify.com");
   const isImporting = importFetcher.state !== "idle";
 
+  function stripHtml(html: any) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return doc.body.innerText || '';
+  }
+
+  const summaryText = stripHtml(article.summary);
+
   return (
     <s-box 
       key={article.id}
@@ -1889,156 +1896,103 @@ function ArticleImageAltEditor({
       </s-clickable>
 
       {isArticleOpen && (
-        <div style={{ padding: "0.75rem 0 0.5rem 1rem" }}>
+        <s-stack 
+          padding="base"
+          borderRadius="base"
+          background="subdued"
+          gap="base"
+        >
           {article.summary && (
-            <p style={{ margin: "0 0 0.75rem", color: "#555" }}>
-              {article.summary}
-            </p>
+            <s-text>{ summaryText }</s-text>
           )}
 
-    <div style={{ marginTop: "1rem" }}>
+            {images.map((img, i) => {
+              const isSaving = savingIndex === i;
+              const isChanged = img.alt !== extractImagesFromHtml(article.body ?? "")[i]?.alt;
 
-      {images.map((img, i) => {
-        const isSaving = savingIndex === i;
-        const isChanged = img.alt !== extractImagesFromHtml(article.body ?? "")[i]?.alt;
-
-        return (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              gap: "1rem",
-              alignItems: "flex-start",
-              marginBottom: "1.5rem",
-              padding: "1rem",
-              backgroundColor: "#f9f9f9",
-              borderRadius: "4px",
-              border: img.alt ? "1px solid #e0e0e0" : "1px solid #ffcccc",
-            }}
-          >
-            {/* IMAGE */}
-            <img
-              src={img.src}
-              alt={img.alt}
-              style={{
-                width: 120,
-                height: 80,
-                objectFit: "contain",
-                flexShrink: 0,
-              }}
-            />
-
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {/* LABEL */}
-              <label
-                style={{
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  color: "#444",
-                  marginBottom: "0.25rem",
-                  display: "block",
-                }}
-              >
-                Alt Text
-              </label>
-
-              {/* INPUT + SAVE */}
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <input
-                  value={img.alt}
-                  onChange={(e) => updateAlt(i, e.target.value)}
-                  placeholder="Describe the image for accessibility..."
-                  style={{
-                    flex: 1,
-                    padding: "0.4rem",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                  }}
-                />
-
-                <button
-                  onClick={() => saveAltToShopify(i)}
-                  disabled={!isChanged || isSaving}
-                  style={{
-                    padding: "0.4rem 0.75rem",
-                    cursor: !isChanged || isSaving ? "not-allowed" : "pointer",
-                    opacity: !isChanged || isSaving ? 0.6 : 1,
-                    backgroundColor: "#111",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "4px",
-                  }}
+              return (
+                <s-grid
+                  key={i}
+                  gridTemplateColumns="130px 1fr"
+                  gap="base"
+                  alignItems="center"
                 >
-                  {isSaving ? "Saving..." : "Save"}
-                </button>
-              </div>
+                  {/* IMAGE */}
+                  <s-image
+                    src={img.src}
+                    alt={img.alt}
+                    aspectRatio="1/1"
+                    borderRadius="base"
+                  />
 
-              {/* SUCCESS */}
-              {saveSuccess[i] && (
-                <div
-                  style={{
-                    color: "#2e7d32",
-                    fontSize: "0.75rem",
-                    marginTop: "0.25rem",
-                  }}
-                >
-                  ✓ Saved
-                </div>
-              )}
+                  <s-stack gap="small">
+                    {/* LABEL */}
+                    <s-heading>Alt Text</s-heading>
 
-              {/* IMAGE SRC */}
-              <p>
-                {img.src}
-              </p>
+                    {/* INPUT + SAVE */}
+                    <s-stack direction="inline" alignItems="center" gap="base" inlineSize="100%">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <s-text-field
+                          value={img.alt}
+                          onChange={(e: any) => updateAlt(i, e.currentTarget.value)}
+                          placeholder="Describe the image for accessibility..."
+                        />
+                      </div>
 
-              {/* IMPORT BUTTON */}
-              {isShopifyCdn(img.src) ? (
-                <span
-                  style={{
-                    fontSize: "0.8rem",
-                    color: "#2e7d32",
-                    fontWeight: 600,
-                  }}
-                >
-                  ✓ Already on Shopify CDN
-                </span>
-              ) : (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                  }}
-                >
-                  <button
-                    onClick={() => importImage(i)}
-                    disabled={isImporting}
-                    style={{
-                      padding: "0.3rem 0.75rem",
-                      cursor: isImporting ? "not-allowed" : "pointer",
-                      opacity: isImporting ? 0.6 : 1,
-                    }}
-                  >
-                    {importingIndex === i && isImporting
-                      ? "Importing…"
-                      : "Import to Shopify CDN"}
-                  </button>
+                      <s-button
+                        onClick={() => saveAltToShopify(i)}
+                        disabled={!isChanged || isSaving}
+                      >
+                        {isSaving ? "Saving..." : "Save"}
+                      </s-button>
+                    </s-stack>
 
-                  {importErrors[i] && (
-                    <span style={{ color: "red", fontSize: "0.8rem" }}>
-                      {importErrors[i]}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+                    {/* SUCCESS */}
+                    {saveSuccess[i] && (
+                      <s-text
+                        tone="success"
+                      >
+                        ✓ Saved
+                      </s-text>
+                    )}
 
-    </div>
+                    {/* IMAGE SRC */}
+                    <s-text>
+                      {img.src}
+                    </s-text>
+
+                    {/* IMPORT BUTTON */}
+                    {isShopifyCdn(img.src) ? (
+                      <s-text
+                        tone="success"
+                      >
+                        ✓ Already on Shopify CDN
+                      </s-text>
+                    ) : (
+                      <s-stack direction="inline" alignItems="center" gap="small"
+                      >
+                        <s-button
+                          onClick={() => importImage(i)}
+                          disabled={isImporting}
+                        >
+                          {importingIndex === i && isImporting
+                            ? "Importing…"
+                            : "Import to Shopify CDN"}
+                        </s-button>
+
+                        {importErrors[i] && (
+                          <s-text tone="warning">
+                            {importErrors[i]}
+                          </s-text>
                         )}
-                      </s-box>
+                      </s-stack>
+                    )}
+                  </s-stack>
+                </s-grid>
+              );
+            })}
+        </s-stack>
+      )}
+    </s-box>
   );
 }
