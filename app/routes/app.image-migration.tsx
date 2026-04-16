@@ -980,6 +980,7 @@ export default function TestingPageSean() {
   const [openArticleIds, setOpenArticleIds] = useState<
     Record<string, Record<string, boolean>>
   >({});
+  const [openMetaobjectIds, setOpenMetaobjectIds] = useState<Record<string, boolean>>({});
   const [pageBodies, setPageBodies] = useState<Record<string, string>>(() =>
     Object.fromEntries(pages.map((edge) => [edge.node.id, edge.node.body ?? ""]))
   );
@@ -1052,6 +1053,13 @@ export default function TestingPageSean() {
     }));
   }
 
+  function toggleMetaobjectGroup(groupType: string) {
+    setOpenMetaobjectIds((cur) => ({
+      ...cur,
+      [groupType]: !cur[groupType],
+    }));
+  }
+
   return (
     <s-page heading="Image Migration">
       {/* ── Blogs ── */}
@@ -1088,7 +1096,7 @@ export default function TestingPageSean() {
                   >
                     <s-stack direction="inline" alignItems="center" gap="base">
                       <s-text>{blog.title}</s-text>
-                      <s-badge>Handle: {blog.handle}</s-badge>
+                      <s-badge><code>{blog.handle}</code></s-badge>
                       <s-badge>{articles.length} articles</s-badge>
                     </s-stack>
                     {isBlogOpen ? <s-icon type="caret-up"></s-icon> : <s-icon type="caret-down"></s-icon>}
@@ -1138,7 +1146,12 @@ export default function TestingPageSean() {
 
         <s-stack direction="block" gap="base">
           {metaobjectGroups.map((group) => (
-            <MetaobjectGroupView key={group.type} group={group} />
+            <MetaobjectGroupView 
+              key={group.type} 
+              group={group}
+              isOpen={openMetaobjectIds[group.type] ?? false}
+              onToggle={() => toggleMetaobjectGroup(group.type)}
+            />
           ))}
 
           {metaobjectGroups.length === 0 && (
@@ -1204,7 +1217,7 @@ export default function TestingPageSean() {
    METAOBJECT GROUP VIEW
 ========================= */
 
-function MetaobjectGroupView({ group }: { group: MetaobjectGroup }) {
+function MetaobjectGroupView({ group, isOpen, onToggle }: { group: MetaobjectGroup; isOpen: boolean; onToggle: () => void }) {
   // fieldValues[entryId][fieldKey] = current value
   const [fieldValues, setFieldValues] = useState<Record<string, Record<string, string | null>>>(
     () => Object.fromEntries(
@@ -1273,31 +1286,43 @@ function MetaobjectGroupView({ group }: { group: MetaobjectGroup }) {
   const batchData = batchFetcher.data as any;
 
   return (
-    <details style={nestedSectionStyle}>
-      <summary style={nestedSummaryStyle}>
-        {group.name}{" "}
-        <s-badge>
-          <code style={{ fontSize: "0.78rem" }}>{group.type}</code>
-        </s-badge>{" "}
-        <s-badge>{group.entries.length} entries</s-badge>
-        {allImportable.length > 0 && (
-          <button
-            onClick={(e) => { e.preventDefault(); handleImportAll(); }}
-            disabled={isBatchImporting}
-            style={{
-              marginLeft: "auto",
-              padding: "0.2rem 0.7rem",
-              fontSize: "0.78rem",
-              cursor: isBatchImporting ? "not-allowed" : "pointer",
-              opacity: isBatchImporting ? 0.6 : 1,
-            }}
-          >
-            {isBatchImporting
-              ? "Importing…"
-              : `Import All Images (${allImportable.length})`}
-          </button>
-        )}
-      </summary>
+    <s-stack
+      background="subdued"
+      borderWidth="base"
+      borderRadius="base"
+    >
+      <s-clickable 
+        borderRadius="base"
+        padding="base"
+        onClick={onToggle}
+      >
+        <s-stack
+          direction="inline"
+          alignItems="center"
+          justifyContent="space-between"
+          inlineSize="100%"
+        >
+          <s-stack direction="inline" alignItems="center" gap="base">
+            {group.name}{" "}
+            <s-badge><code>{group.type}</code></s-badge>
+            {" "}
+            <s-badge>{group.entries.length} entries</s-badge>
+          </s-stack>
+          <s-stack direction="inline" alignItems="center" gap="base">
+            {allImportable.length > 0 && (
+              <s-button
+                onClick={(e) => { e.preventDefault(); handleImportAll(); }}
+                disabled={isBatchImporting}
+              >
+                {isBatchImporting
+                  ? "Importing…"
+                  : `Import All Images (${allImportable.length})`}
+              </s-button>
+            )}
+            {isOpen ? <s-icon type="caret-up"></s-icon> : <s-icon type="caret-down"></s-icon>}
+          </s-stack>
+        </s-stack>
+      </s-clickable>
 
       {batchData?.errors?.length > 0 && (
         <div style={{ padding: "0.4rem 1rem", color: "red", fontSize: "0.8rem" }}>
@@ -1305,21 +1330,27 @@ function MetaobjectGroupView({ group }: { group: MetaobjectGroup }) {
         </div>
       )}
 
-      <div style={{ padding: "0.5rem 0 0.5rem 1rem" }}>
-        {group.entries.length === 0 ? (
-          <p style={{ color: "#999", fontStyle: "italic" }}>No entries</p>
-        ) : (
-          group.entries.map((entry) => (
-            <MetaobjectEntryView
-              key={entry.id}
-              entry={entry}
-              fieldValues={fieldValues[entry.id] ?? {}}
-              onFieldUpdate={(key, newUrl) => handleFieldUpdate(entry.id, key, newUrl)}
-            />
-          ))
-        )}
-      </div>
-    </details>
+      {isOpen && (
+        <s-stack
+          padding="small"
+          background="base"
+          borderRadius="none none base base"
+        >
+          {group.entries.length === 0 ? (
+            <s-text color="subdued"><em>No entries</em></s-text>
+          ) : (
+            group.entries.map((entry) => (
+              <MetaobjectEntryView
+                key={entry.id}
+                entry={entry}
+                fieldValues={fieldValues[entry.id] ?? {}}
+                onFieldUpdate={(key, newUrl) => handleFieldUpdate(entry.id, key, newUrl)}
+              />
+            ))
+          )}
+        </s-stack>
+      )}
+    </s-stack>
   );
 }
 
@@ -1336,34 +1367,50 @@ function MetaobjectEntryView({
   fieldValues: Record<string, string | null>;
   onFieldUpdate: (key: string, newUrl: string) => void;
 }) {
+  const [isOpen, setIsOpen] = useState<boolean>(false);
+
   return (
-    <details style={articleSectionStyle}>
-      <summary style={nestedSummaryStyle}>
-        <code style={{ fontSize: "0.82rem" }}>{entry.handle}</code>
-      </summary>
-      <div style={{ padding: "0.5rem 0 0.5rem 1rem" }}>
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>Field</th>
-              <th style={thStyle}>Type</th>
-              <th style={thStyle}>Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entry.fields.map((field) => (
-              <MetaobjectFieldRow
-                key={field.key}
-                field={field}
-                metaobjectId={entry.id}
-                overrideValue={fieldValues[field.key]}
-                onImported={onFieldUpdate}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </details>
+    <s-box
+      borderWidth="base"
+      borderRadius="base"
+    >
+      <s-clickable
+        padding="small"
+        borderRadius="base"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <s-stack direction="inline" alignItems="center" justifyContent="space-between" inlineSize="100%">
+          <code style={{ fontSize: "0.82rem" }}>{entry.handle}</code>
+          {isOpen ? <s-icon type="caret-up"></s-icon> : <s-icon type="caret-down"></s-icon>}
+        </s-stack>
+      </s-clickable>
+
+      {isOpen && (
+        <>
+          <s-divider/>
+          <s-box>
+            <s-table>
+              <s-table-header-row>
+                <s-table-header>Field</s-table-header>
+                <s-table-header>Type</s-table-header>
+                <s-table-header>Value</s-table-header>
+              </s-table-header-row>
+              <s-table-body>
+                {entry.fields.map((field) => (
+                  <MetaobjectFieldRow
+                    key={field.key}
+                    field={field}
+                    metaobjectId={entry.id}
+                    overrideValue={fieldValues[field.key]}
+                    onImported={onFieldUpdate}
+                  />
+                ))}
+              </s-table-body>
+            </s-table>
+          </s-box>
+        </>
+      )}
+    </s-box>
   );
 }
 
@@ -1428,50 +1475,43 @@ function MetaobjectFieldRow({
   }
 
   return (
-    <tr>
-      <td style={tdStyle}>
-        <code style={{ fontSize: "0.82rem" }}>{field.key}</code>
-      </td>
-      <td style={tdStyle}>
+    <s-table-row>
+      <s-table-cell>
+        <code>{field.key}</code>
+      </s-table-cell>
+      <s-table-cell>
         <s-badge>{field.type}</s-badge>
-      </td>
-      <td style={{ ...tdStyle, wordBreak: "break-all", maxWidth: "320px" }}>
+      </s-table-cell>
+      <s-table-cell>
         {currentValue ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-            <span>{currentValue}</span>
+          <s-stack gap="small">
+            <s-text>{currentValue}</s-text>
             {showImportButton && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <button
+              <s-stack direction="inline" alignItems="center">
+                <s-button
                   onClick={handleImport}
                   disabled={isImporting}
-                  style={{
-                    alignSelf: "flex-start",
-                    padding: "0.2rem 0.6rem",
-                    fontSize: "0.78rem",
-                    cursor: isImporting ? "not-allowed" : "pointer",
-                    opacity: isImporting ? 0.6 : 1,
-                  }}
                 >
                   {isImporting ? "Importing…" : "Import to Shopify CDN"}
-                </button>
+                </s-button>
                 {importError && (
-                  <span style={{ fontSize: "0.78rem", color: "red" }}>
+                  <s-text tone="critical">
                     ⚠ {importError}
-                  </span>
+                  </s-text>
                 )}
-              </div>
+              </s-stack>
             )}
             {!showImportButton && currentValue.includes("cdn.shopify.com") && IMAGE_EXTENSIONS.test(currentValue) && (
-              <span style={{ fontSize: "0.75rem", color: "#2e7d32", fontWeight: 600 }}>
+              <s-text tone="success">
                 ✓ Already on Shopify CDN
-              </span>
+              </s-text>
             )}
-          </div>
+          </s-stack>
         ) : (
-          <span style={{ color: "#aaa" }}>—</span>
+          <s-text color="subdued">—</s-text>
         )}
-      </td>
-    </tr>
+      </s-table-cell>
+    </s-table-row>
   );
 }
 
@@ -1882,7 +1922,6 @@ function ArticleImageAltEditor({
         id={`article-toggle-${article.id}`}
         onClick={onToggleArticle}
         padding="small"
-        background="base"
         borderRadius="base"
       >
         <s-stack direction="inline" alignItems="center" justifyContent="space-between" inlineSize="100%">
