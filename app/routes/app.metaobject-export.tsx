@@ -10,7 +10,6 @@ import { authenticate } from "../shopify.server";
 const DOWNLOAD_PATH = "/app/metaobject-export-download";
 type ExportResource = "products" | "collections" | "articles" | "pages" | "metaobjects";
 type HandleExportResource = Exclude<ExportResource, "metaobjects">;
-type ImportCommand = "MERGE";
 
 type CsvMetaobjectField = {
   key: string;
@@ -149,7 +148,6 @@ const validateMetaobjectImportCsvRows = (
   const definitionHandleIndex = headerMap.get("Definition: Handle")!;
   const fieldIndex = headerMap.get("Field")!;
   const valueIndex = headerMap.get("Value")!;
-  const commandIndex = headerMap.get("Command");
 
   const validationErrors: string[] = [];
   const groupedEntries = new Map<
@@ -163,7 +161,6 @@ const validateMetaobjectImportCsvRows = (
     const definitionHandle = (row[definitionHandleIndex] ?? "").trim();
     const field = (row[fieldIndex] ?? "").trim();
     const value = (row[valueIndex] ?? "").trim();
-    const command = commandIndex !== undefined ? (row[commandIndex] ?? "").trim() : "";
 
     if (!handle) {
       validationErrors.push(`Row ${csvRowNumber}: Handle is required.`);
@@ -175,12 +172,6 @@ const validateMetaobjectImportCsvRows = (
 
     if (!field) {
       validationErrors.push(`Row ${csvRowNumber}: Field is required.`);
-    }
-
-    if (command && command.toUpperCase() !== "MERGE") {
-      validationErrors.push(
-        `Row ${csvRowNumber}: Command must be MERGE when provided. Received '${command}'.`,
-      );
     }
 
     if (!handle || !definitionHandle || !field) {
@@ -574,8 +565,7 @@ export default function MetaobjectExport() {
         <h2 style={{ marginTop: 0 }}>Metaobject Import (CSV)</h2>
         <p style={{ marginBottom: "0.5rem" }}>
           Required columns: Handle, Definition: Handle, Field, Value. Any optional
-          "Definition: Name" column is ignored. If a "Command" column is present,
-          it must be MERGE.
+          "Definition: Name" or "Command" columns are ignored.
         </p>
         <p style={{ marginTop: 0 }}>
           Import uses merge behavior: only fields listed in your CSV are updated.

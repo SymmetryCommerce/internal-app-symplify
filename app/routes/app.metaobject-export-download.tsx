@@ -451,7 +451,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
-  const headerValues = ["handle", "definitionType", "definitionName", "field", "value"];
+  const headerValues = [
+    "Handle",
+    "Definition: Handle",
+    "Definition: Name",
+    "Field",
+    "Value",
+  ];
   const headerRow = headerValues.map(csvEscape).join(",");
 
   const csv = [headerRow, ...rows].join("\n");
