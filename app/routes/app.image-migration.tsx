@@ -1125,7 +1125,7 @@ export default function TestingPageSean() {
                   })}
 
                   {articles.length === 0 && (
-                    <p style={{ color: "#999", fontStyle: "italic" }}>No articles</p>
+                    <s-text color="subdued"><em>No articles</em></s-text>
                   )}
                 </s-stack>
               )}
@@ -1182,13 +1182,15 @@ export default function TestingPageSean() {
           </s-heading>
           
 
-          {((pageBatchFetcher.data as any)?.errors?.length ?? 0) > 0 && (
-            <s-banner heading="Error" tone="critical">
-              {(pageBatchFetcher.data as any).errors.map((e: string, i: number) => (
-                <s-text key={i}><s-icon type="alert-triangle"/> {e}</s-text>
-              ))}
-            </s-banner>
-          )}
+          <s-box>
+            {((pageBatchFetcher.data as any)?.errors?.length ?? 0) > 0 && (
+              <s-banner heading="Error" tone="critical">
+                {(pageBatchFetcher.data as any).errors.map((e: string, i: number) => (
+                  <s-text key={i}>{e}</s-text>
+                ))}
+              </s-banner>
+            )}
+          </s-box>
 
           <s-stack gap="small">
             {pages.map((pageEdge) => (
@@ -1321,11 +1323,15 @@ function MetaobjectGroupView({ group, isOpen, onToggle }: { group: MetaobjectGro
         </s-stack>
       </s-clickable>
 
-      {batchData?.errors?.length > 0 && (
-        <div style={{ padding: "0.4rem 1rem", color: "red", fontSize: "0.8rem" }}>
-          {batchData.errors.map((e: string, i: number) => <div key={i}>⚠ {e}</div>)}
-        </div>
-      )}
+      <s-box padding="none small none small">
+        {batchData?.errors?.length > 0 && (
+          <s-banner heading="Error" tone="critical">
+            {batchData.errors.map((e: string, i: number) => 
+              <s-text key={i}>{e}</s-text>
+            )}
+          </s-banner>
+        )}
+      </s-box>
 
       {isOpen && (
         <s-stack
@@ -1679,91 +1685,6 @@ function PageImageMigrationEditor({
     </s-stack>
   );
 }
-
-/* =========================
-   STYLES
-========================= */
-
-const sectionStyle: React.CSSProperties = {
-  marginBottom: "1.5rem",
-  border: "1px solid #d1d5db",
-  borderRadius: "8px",
-  overflow: "hidden",
-};
-
-const summaryStyle: React.CSSProperties = {
-  padding: "0.85rem 1.25rem",
-  fontWeight: 600,
-  fontSize: "1.05rem",
-  cursor: "pointer",
-  backgroundColor: "#f3f4f6",
-  userSelect: "none",
-  listStyle: "none",
-  display: "flex",
-  alignItems: "center",
-  gap: "0.5rem",
-};
-
-const nestedSectionStyle: React.CSSProperties = {
-  marginBottom: "0.5rem",
-  border: "1px solid #e5e7eb",
-  borderRadius: "6px",
-  overflow: "hidden",
-};
-
-const articleSectionStyle: React.CSSProperties = {
-  marginBottom: "0.4rem",
-  border: "1px solid #ede9fe",
-  borderRadius: "5px",
-  overflow: "hidden",
-};
-
-const nestedSummaryStyle: React.CSSProperties = {
-  padding: "0.6rem 1rem",
-  fontWeight: 500,
-  cursor: "pointer",
-  backgroundColor: "#f9fafb",
-  userSelect: "none",
-  listStyle: "none",
-  display: "flex",
-  alignItems: "center",
-  gap: "0.5rem",
-};
-
-const clickableSummaryInnerStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "0.5rem",
-  width: "100%",
-};
-
-const toggleIconStyle: React.CSSProperties = {
-  marginLeft: "auto",
-  color: "#6b7280",
-  fontSize: "0.9rem",
-  lineHeight: 1,
-};
-
-const tableStyle: React.CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-  fontSize: "0.88rem",
-};
-
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  backgroundColor: "#f3f4f6",
-  borderBottom: "1px solid #e5e7eb",
-  fontWeight: 600,
-  color: "#374151",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "0.45rem 0.75rem",
-  borderBottom: "1px solid #f3f4f6",
-  verticalAlign: "middle",
-};
 
 /* =========================
    IMAGE EDITOR COMPONENT
