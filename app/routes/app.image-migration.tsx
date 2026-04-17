@@ -1065,7 +1065,7 @@ export default function TestingPageSean() {
       {/* ── Blogs ── */}
       <s-section>
         <s-heading>
-          📝 Blogs ({blogs.length})
+          Blogs ({blogs.length})
         </s-heading>
 
         <s-stack direction="block" gap="base">
@@ -1140,7 +1140,7 @@ export default function TestingPageSean() {
       {/* ── Metaobjects ── */}
       <s-section>
         <s-heading>
-          🗂 Metaobjects ({metaobjectGroups.length} types)
+          Metaobjects ({metaobjectGroups.length} types)
         </s-heading>
 
         <s-stack direction="block" gap="base">
@@ -1164,7 +1164,7 @@ export default function TestingPageSean() {
         <s-stack gap="base">
           <s-heading>
             <s-stack direction="inline" alignItems="center" justifyContent="space-between">
-            📄 Pages ({pages.length})
+            Pages ({pages.length})
             {allImportablePages.length > 0 && (
               <s-button
                 onClick={(e) => {
