@@ -976,6 +976,11 @@ export default function TestingPageSean() {
     useLoaderData<typeof loader>();
 
   const pageBatchFetcher = useFetcher();
+  const [openBlogIds, setOpenBlogIds] = useState<Record<string, boolean>>({});
+  const [openArticleIds, setOpenArticleIds] = useState<
+    Record<string, Record<string, boolean>>
+  >({});
+  const [openMetaobjectIds, setOpenMetaobjectIds] = useState<Record<string, boolean>>({});
   const [pageBodies, setPageBodies] = useState<Record<string, string>>(() =>
     Object.fromEntries(pages.map((edge) => [edge.node.id, edge.node.body ?? ""]))
   );
@@ -1031,133 +1036,179 @@ export default function TestingPageSean() {
     }));
   }
 
+  function toggleBlog(blogId: string) {
+    setOpenBlogIds((cur) => ({
+      ...cur,
+      [blogId]: !cur[blogId],
+    }));
+  }
+
+  function toggleArticle(blogId: string, articleId: string) {
+    setOpenArticleIds((cur) => ({
+      ...cur,
+      [blogId]: {
+        ...(cur[blogId] ?? {}),
+        [articleId]: !(cur[blogId]?.[articleId]),
+      },
+    }));
+  }
+
+  function toggleMetaobjectGroup(groupType: string) {
+    setOpenMetaobjectIds((cur) => ({
+      ...cur,
+      [groupType]: !cur[groupType],
+    }));
+  }
+
   return (
-    <div style={{ padding: "2rem" }}>
-      <h1>Content Overview</h1>
-
+    <s-page heading="Image Migration">
       {/* ── Blogs ── */}
-      <details style={sectionStyle}>
-        <summary style={summaryStyle}>
-          📝 Blogs ({blogs.length})
-        </summary>
+      <s-section>
+        <s-heading>
+          Blogs ({blogs.length})
+        </s-heading>
 
-        <div style={{ padding: "1rem 0" }}>
+        <s-stack direction="block" gap="base">
           {blogs.map((blogEdge) => {
             const blog = blogEdge.node;
             const articles = blog.articles?.edges ?? [];
+            const isBlogOpen = openBlogIds[blog.id] ?? false;
+            const openArticles = openArticleIds[blog.id] ?? {};
 
-            return (
-              <details key={blog.id} style={nestedSectionStyle}>
-                <summary style={nestedSummaryStyle}>
-                  {blog.title}{" "}
-                  <span style={badgeStyle}>{articles.length} articles</span>
-                </summary>
+            return (              
+              <s-stack
+                key={blog.id} 
+                id={`blog-toggle-${blog.id}`}
+                background="subdued"
+                borderWidth="base"
+                borderRadius="base"
+              >
+                <s-clickable 
+                  borderRadius="base"
+                  padding="small"
+                  onClick={() => toggleBlog(blog.id)}
+                >
+                  <s-stack
+                    direction="inline"
+                    alignItems="center"
+                    justifyContent="space-between"
+                    inlineSize="100%"
+                  >
+                    <s-stack direction="inline" alignItems="center" gap="base">
+                      <s-text>{blog.title}</s-text>
+                      <s-badge><code>{blog.handle}</code></s-badge>
+                      <s-badge>{articles.length} articles</s-badge>
+                    </s-stack>
+                    {isBlogOpen ? <s-icon type="caret-up"/> : <s-icon type="caret-down"/>}
+                  </s-stack>
+                </s-clickable>
 
-                <div style={{ padding: "0.5rem 0 0.5rem 1rem" }}>
-                  <p style={{ margin: "0 0 0.5rem", color: "#555", fontSize: "0.85rem" }}>
-                    Handle: <code>{blog.handle}</code>
-                  </p>
-
+                {isBlogOpen && (
+                <s-stack
+                  padding="small"
+                  background="base"
+                  borderRadius="none none base base"
+                  gap="small"
+                >
                   {articles.map((articleEdge) => {
                     const article = articleEdge.node;
+                    const isArticleOpen = openArticles[article.id] ?? false;
+
                     return (
-                      <details key={article.id} style={articleSectionStyle}>
-                        <summary style={nestedSummaryStyle}>
-                          {article.title}
-                        </summary>
-                        <div style={{ padding: "0.75rem 0 0.5rem 1rem" }}>
-                          {article.summary && (
-                            <p style={{ margin: "0 0 0.75rem", color: "#555" }}>
-                              {article.summary}
-                            </p>
-                          )}
-                          <ArticleImageAltEditor article={article} />
-                        </div>
-                      </details>
+                      <ArticleImageAltEditor 
+                        key={article.id}
+                        article={article}
+                        isArticleOpen={isArticleOpen}
+                        onToggleArticle={() => toggleArticle(blog.id, article.id)}
+                      />
                     );
                   })}
 
                   {articles.length === 0 && (
-                    <p style={{ color: "#999", fontStyle: "italic" }}>No articles</p>
+                    <s-text color="subdued"><em>No articles</em></s-text>
                   )}
-                </div>
-              </details>
+                </s-stack>
+              )}
+              </s-stack>
             );
           })}
 
-          {blogs.length === 0 && (
-            <p style={{ color: "#999", fontStyle: "italic" }}>No blogs found</p>
-          )}
-        </div>
-      </details>
+          {blogs.length === 0 && <s-text color="subdued"><em>No blogs found</em></s-text>}
+        </s-stack>
+      </s-section>
 
       {/* ── Metaobjects ── */}
-      <details style={sectionStyle}>
-        <summary style={summaryStyle}>
-          🗂 Metaobjects ({metaobjectGroups.length} types)
-        </summary>
+      <s-section>
+        <s-heading>
+          Metaobjects ({metaobjectGroups.length} types)
+        </s-heading>
 
-        <div style={{ padding: "1rem 0" }}>
+        <s-stack direction="block" gap="base">
           {metaobjectGroups.map((group) => (
-            <MetaobjectGroupView key={group.type} group={group} />
-          ))}
-
-          {metaobjectGroups.length === 0 && (
-            <p style={{ color: "#999", fontStyle: "italic" }}>No metaobjects found</p>
-          )}
-        </div>
-      </details>
-
-      {/* ── Pages ── */}
-      <details style={sectionStyle}>
-        <summary style={summaryStyle}>
-          📄 Pages ({pages.length})
-          {allImportablePages.length > 0 && (
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                handleImportAllPageImages();
-              }}
-              disabled={isImportingAllPages}
-              style={{
-                marginLeft: "auto",
-                padding: "0.25rem 0.8rem",
-                fontSize: "0.8rem",
-                cursor: isImportingAllPages ? "not-allowed" : "pointer",
-                opacity: isImportingAllPages ? 0.6 : 1,
-              }}
-            >
-              {isImportingAllPages
-                ? "Importing…"
-                : `Import All Page Images (${allImportablePages.reduce((sum, p) => sum + p.images.length, 0)})`}
-            </button>
-          )}
-        </summary>
-
-        {((pageBatchFetcher.data as any)?.errors?.length ?? 0) > 0 && (
-          <div style={{ padding: "0.5rem 1rem", color: "red", fontSize: "0.82rem" }}>
-            {(pageBatchFetcher.data as any).errors.map((e: string, i: number) => (
-              <div key={i}>⚠ {e}</div>
-            ))}
-          </div>
-        )}
-
-        <div style={{ padding: "1rem 0" }}>
-          {pages.map((pageEdge) => (
-            <PageImageMigrationEditor
-              key={pageEdge.node.id}
-              page={pageEdge.node}
-              body={pageBodies[pageEdge.node.id] ?? pageEdge.node.body ?? ""}
-              onBodyUpdated={handlePageBodyUpdated}
+            <MetaobjectGroupView 
+              key={group.type} 
+              group={group}
+              isOpen={openMetaobjectIds[group.type] ?? false}
+              onToggle={() => toggleMetaobjectGroup(group.type)}
             />
           ))}
 
-          {pages.length === 0 && (
-            <p style={{ color: "#999", fontStyle: "italic" }}>No pages found</p>
+          {metaobjectGroups.length === 0 && (
+            <s-text color="subdued"><em>No metaobjects found</em></s-text>
           )}
-        </div>
-      </details>
-    </div>
+        </s-stack>
+      </s-section>
+
+      {/* ── Pages ── */}
+      <s-section>
+        <s-stack gap="base">
+          <s-heading>
+            <s-stack direction="inline" alignItems="center" justifyContent="space-between">
+            Pages ({pages.length})
+            {allImportablePages.length > 0 && (
+              <s-button
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleImportAllPageImages();
+                }}
+                disabled={isImportingAllPages}
+              >
+                {isImportingAllPages
+                  ? "Importing…"
+                  : `Import All Page Images (${allImportablePages.reduce((sum, p) => sum + p.images.length, 0)})`}
+              </s-button>
+            )}
+            </s-stack>
+          </s-heading>
+          
+
+          <s-box>
+            {((pageBatchFetcher.data as any)?.errors?.length ?? 0) > 0 && (
+              <s-banner heading="Error" tone="critical">
+                {(pageBatchFetcher.data as any).errors.map((e: string, i: number) => (
+                  <s-text key={i}>{e}</s-text>
+                ))}
+              </s-banner>
+            )}
+          </s-box>
+
+          <s-stack gap="small">
+            {pages.map((pageEdge) => (
+              <PageImageMigrationEditor
+                key={pageEdge.node.id}
+                page={pageEdge.node}
+                body={pageBodies[pageEdge.node.id] ?? pageEdge.node.body ?? ""}
+                onBodyUpdated={handlePageBodyUpdated}
+              />
+            ))}
+
+            {pages.length === 0 && (
+              <s-text color="subdued"><em>No pages found</em></s-text>
+            )}
+          </s-stack>
+        </s-stack>
+      </s-section>
+    </s-page>
   );
 }
 
@@ -1165,7 +1216,7 @@ export default function TestingPageSean() {
    METAOBJECT GROUP VIEW
 ========================= */
 
-function MetaobjectGroupView({ group }: { group: MetaobjectGroup }) {
+function MetaobjectGroupView({ group, isOpen, onToggle }: { group: MetaobjectGroup; isOpen: boolean; onToggle: () => void }) {
   // fieldValues[entryId][fieldKey] = current value
   const [fieldValues, setFieldValues] = useState<Record<string, Record<string, string | null>>>(
     () => Object.fromEntries(
@@ -1234,53 +1285,76 @@ function MetaobjectGroupView({ group }: { group: MetaobjectGroup }) {
   const batchData = batchFetcher.data as any;
 
   return (
-    <details style={nestedSectionStyle}>
-      <summary style={nestedSummaryStyle}>
-        {group.name}{" "}
-        <span style={badgeStyle}>
-          <code style={{ fontSize: "0.78rem" }}>{group.type}</code>
-        </span>{" "}
-        <span style={badgeStyle}>{group.entries.length} entries</span>
-        {allImportable.length > 0 && (
-          <button
-            onClick={(e) => { e.preventDefault(); handleImportAll(); }}
-            disabled={isBatchImporting}
-            style={{
-              marginLeft: "auto",
-              padding: "0.2rem 0.7rem",
-              fontSize: "0.78rem",
-              cursor: isBatchImporting ? "not-allowed" : "pointer",
-              opacity: isBatchImporting ? 0.6 : 1,
-            }}
-          >
-            {isBatchImporting
-              ? "Importing…"
-              : `Import All Images (${allImportable.length})`}
-          </button>
-        )}
-      </summary>
+    <s-stack
+      background="subdued"
+      borderWidth="base"
+      borderRadius="base"
+    >
+      <s-clickable 
+        borderRadius="base"
+        padding="small"
+        onClick={onToggle}
+      >
+        <s-stack
+          direction="inline"
+          alignItems="center"
+          justifyContent="space-between"
+          inlineSize="100%"
+        >
+          <s-stack direction="inline" alignItems="center" gap="base">
+            {group.name}{" "}
+            <s-badge><code>{group.type}</code></s-badge>
+            {" "}
+            <s-badge>{group.entries.length} entries</s-badge>
+          </s-stack>
+          <s-stack direction="inline" alignItems="center" gap="base">
+            {allImportable.length > 0 && (
+              <s-button
+                onClick={(e) => { e.preventDefault(); handleImportAll(); }}
+                disabled={isBatchImporting}
+              >
+                {isBatchImporting
+                  ? "Importing…"
+                  : `Import All Images (${allImportable.length})`}
+              </s-button>
+            )}
+            {isOpen ? <s-icon type="caret-up"/> : <s-icon type="caret-down"/>}
+          </s-stack>
+        </s-stack>
+      </s-clickable>
 
-      {batchData?.errors?.length > 0 && (
-        <div style={{ padding: "0.4rem 1rem", color: "red", fontSize: "0.8rem" }}>
-          {batchData.errors.map((e: string, i: number) => <div key={i}>⚠ {e}</div>)}
-        </div>
+      <s-box padding="none small none small">
+        {batchData?.errors?.length > 0 && (
+          <s-banner heading="Error" tone="critical">
+            {batchData.errors.map((e: string, i: number) => 
+              <s-text key={i}>{e}</s-text>
+            )}
+          </s-banner>
+        )}
+      </s-box>
+
+      {isOpen && (
+        <s-stack
+          padding="small"
+          background="base"
+          borderRadius="none none base base"
+          gap="small"
+        >
+          {group.entries.length === 0 ? (
+            <s-text color="subdued"><em>No entries</em></s-text>
+          ) : (
+            group.entries.map((entry) => (
+              <MetaobjectEntryView
+                key={entry.id}
+                entry={entry}
+                fieldValues={fieldValues[entry.id] ?? {}}
+                onFieldUpdate={(key, newUrl) => handleFieldUpdate(entry.id, key, newUrl)}
+              />
+            ))
+          )}
+        </s-stack>
       )}
-
-      <div style={{ padding: "0.5rem 0 0.5rem 1rem" }}>
-        {group.entries.length === 0 ? (
-          <p style={{ color: "#999", fontStyle: "italic" }}>No entries</p>
-        ) : (
-          group.entries.map((entry) => (
-            <MetaobjectEntryView
-              key={entry.id}
-              entry={entry}
-              fieldValues={fieldValues[entry.id] ?? {}}
-              onFieldUpdate={(key, newUrl) => handleFieldUpdate(entry.id, key, newUrl)}
-            />
-          ))
-        )}
-      </div>
-    </details>
+    </s-stack>
   );
 }
 
@@ -1297,34 +1371,50 @@ function MetaobjectEntryView({
   fieldValues: Record<string, string | null>;
   onFieldUpdate: (key: string, newUrl: string) => void;
 }) {
+  const [isOpen, setIsOpen] = useState<boolean>(false);
+
   return (
-    <details style={articleSectionStyle}>
-      <summary style={nestedSummaryStyle}>
-        <code style={{ fontSize: "0.82rem" }}>{entry.handle}</code>
-      </summary>
-      <div style={{ padding: "0.5rem 0 0.5rem 1rem" }}>
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>Field</th>
-              <th style={thStyle}>Type</th>
-              <th style={thStyle}>Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entry.fields.map((field) => (
-              <MetaobjectFieldRow
-                key={field.key}
-                field={field}
-                metaobjectId={entry.id}
-                overrideValue={fieldValues[field.key]}
-                onImported={onFieldUpdate}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </details>
+    <s-box
+      borderWidth="base"
+      borderRadius="base"
+    >
+      <s-clickable
+        padding="small"
+        borderRadius="base"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <s-stack direction="inline" alignItems="center" justifyContent="space-between" inlineSize="100%">
+          <code style={{ fontSize: "0.82rem" }}>{entry.handle}</code>
+          {isOpen ? <s-icon type="caret-up"/> : <s-icon type="caret-down"/>}
+        </s-stack>
+      </s-clickable>
+
+      {isOpen && (
+        <>
+          <s-divider/>
+          <s-box>
+            <s-table>
+              <s-table-header-row>
+                <s-table-header>Field</s-table-header>
+                <s-table-header>Type</s-table-header>
+                <s-table-header>Value</s-table-header>
+              </s-table-header-row>
+              <s-table-body>
+                {entry.fields.map((field) => (
+                  <MetaobjectFieldRow
+                    key={field.key}
+                    field={field}
+                    metaobjectId={entry.id}
+                    overrideValue={fieldValues[field.key]}
+                    onImported={onFieldUpdate}
+                  />
+                ))}
+              </s-table-body>
+            </s-table>
+          </s-box>
+        </>
+      )}
+    </s-box>
   );
 }
 
@@ -1389,50 +1479,43 @@ function MetaobjectFieldRow({
   }
 
   return (
-    <tr>
-      <td style={tdStyle}>
-        <code style={{ fontSize: "0.82rem" }}>{field.key}</code>
-      </td>
-      <td style={tdStyle}>
-        <span style={typeBadgeStyle}>{field.type}</span>
-      </td>
-      <td style={{ ...tdStyle, wordBreak: "break-all", maxWidth: "320px" }}>
+    <s-table-row>
+      <s-table-cell>
+        <code>{field.key}</code>
+      </s-table-cell>
+      <s-table-cell>
+        <s-badge>{field.type}</s-badge>
+      </s-table-cell>
+      <s-table-cell>
         {currentValue ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-            <span>{currentValue}</span>
+          <s-stack gap="small">
+            <s-text>{currentValue}</s-text>
             {showImportButton && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <button
+              <s-stack direction="inline" alignItems="center">
+                <s-button
                   onClick={handleImport}
                   disabled={isImporting}
-                  style={{
-                    alignSelf: "flex-start",
-                    padding: "0.2rem 0.6rem",
-                    fontSize: "0.78rem",
-                    cursor: isImporting ? "not-allowed" : "pointer",
-                    opacity: isImporting ? 0.6 : 1,
-                  }}
                 >
                   {isImporting ? "Importing…" : "Import to Shopify CDN"}
-                </button>
+                </s-button>
                 {importError && (
-                  <span style={{ fontSize: "0.78rem", color: "red" }}>
+                  <s-text tone="critical">
                     ⚠ {importError}
-                  </span>
+                  </s-text>
                 )}
-              </div>
+              </s-stack>
             )}
             {!showImportButton && currentValue.includes("cdn.shopify.com") && IMAGE_EXTENSIONS.test(currentValue) && (
-              <span style={{ fontSize: "0.75rem", color: "#2e7d32", fontWeight: 600 }}>
+              <s-text tone="success">
                 ✓ Already on Shopify CDN
-              </span>
+              </s-text>
             )}
-          </div>
+          </s-stack>
         ) : (
-          <span style={{ color: "#aaa" }}>—</span>
+          <s-text color="subdued">—</s-text>
         )}
-      </td>
-    </tr>
+      </s-table-cell>
+    </s-table-row>
   );
 }
 
@@ -1450,6 +1533,7 @@ function PageImageMigrationEditor({
   onBodyUpdated: (pageId: string, updatedBody: string) => void;
 }) {
   const importFetcher = useFetcher();
+  const [isOpen, setIsOpen] = useState<boolean>(false);
   const [importingIndex, setImportingIndex] = useState<number | null>(null);
   const [importErrors, setImportErrors] = useState<Record<number, string>>({});
 
@@ -1507,176 +1591,100 @@ function PageImageMigrationEditor({
   }
 
   return (
-    <details style={nestedSectionStyle}>
-      <summary style={nestedSummaryStyle}>
-        {page.title}
-        <span style={badgeStyle}>
-          <code style={{ fontSize: "0.78rem" }}>{page.handle}</code>
-        </span>
-        <span style={badgeStyle}>{images.length} images</span>
-        <span style={badgeStyle}>{externalCount} external</span>
-      </summary>
+    <s-stack
+      background="subdued"
+      borderWidth="base"
+      borderRadius="base"
+    >
+      <s-clickable 
+        borderRadius="base"
+        padding="base"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <s-stack
+          direction="inline"
+          alignItems="center"
+          justifyContent="space-between"
+          inlineSize="100%"
+        >
+          <s-stack direction="inline" alignItems="center" gap="base">
+            {page.title}
+            <s-badge>
+              <code style={{ fontSize: "0.78rem" }}>{page.handle}</code>
+            </s-badge>
+            <s-badge>{images.length} images</s-badge>
+            <s-badge>{externalCount} external</s-badge>
+          </s-stack>
+          {isOpen ? <s-icon type="caret-up"/> : <s-icon type="caret-down"/>}
+        </s-stack>
+      </s-clickable>
 
-      <div style={{ padding: "0.5rem 1rem 1rem" }}>
+      {isOpen && (
+        <s-stack
+          padding="small"
+          background="base"
+          borderRadius="none none base base"
+          gap="small"
+        >
         {images.length === 0 ? (
-          <p style={{ color: "#999", fontStyle: "italic" }}>No images found</p>
+          <s-text color="subdued"><em>No images found</em></s-text>
         ) : (
           images.map((img, i) => {
             const alreadyOnCdn = img.src.includes("cdn.shopify.com");
             return (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  gap: "1rem",
-                  alignItems: "flex-start",
-                  marginBottom: "1rem",
-                  padding: "0.8rem",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "6px",
-                  backgroundColor: "#fff",
-                }}
+              <s-stack 
+                padding="base"
+                borderRadius="base"
+                borderWidth="base"
+                gap="base"
               >
-                <img
-                  src={img.src}
-                  alt={img.alt}
-                  style={{ width: 120, height: 80, objectFit: "contain", flexShrink: 0 }}
-                />
+                <s-grid
+                  key={i}
+                  gridTemplateColumns="100px 1fr"
+                  gap="base"
+                  alignItems="center"
+                >
+                  <s-image
+                    src={img.src}
+                    alt={img.alt}
+                    aspectRatio="1/1"
+                    borderRadius="base"
+                  />
 
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <p
-                    style={{
-                      margin: 0,
-                      fontFamily: "monospace",
-                      fontSize: "0.75rem",
-                      color: "#555",
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {img.src}
-                  </p>
+                  <s-stack gap="base">
+                    <s-text>
+                      {img.src}
+                    </s-text>
 
-                  <div style={{ marginTop: "0.45rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    {alreadyOnCdn ? (
-                      <span style={{ fontSize: "0.8rem", color: "#2e7d32", fontWeight: 600 }}>
-                        ✓ Already on Shopify CDN
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => importImage(i)}
-                        disabled={isImporting}
-                        style={{
-                          padding: "0.3rem 0.75rem",
-                          cursor: isImporting ? "not-allowed" : "pointer",
-                          opacity: isImporting ? 0.6 : 1,
-                        }}
-                      >
-                        {importingIndex === i && isImporting ? "Importing…" : "Import to Shopify CDN"}
-                      </button>
-                    )}
+                    <s-stack direction="inline" alignItems="center" gap="base">
+                      {alreadyOnCdn ? (
+                        <s-text tone="success">
+                          ✓ Already on Shopify CDN
+                        </s-text>
+                      ) : (
+                        <s-button
+                          onClick={() => importImage(i)}
+                          disabled={isImporting}
+                        >
+                          {importingIndex === i && isImporting ? "Importing…" : "Import to Shopify CDN"}
+                        </s-button>
+                      )}
 
-                    {importErrors[i] && (
-                      <span style={{ color: "red", fontSize: "0.8rem" }}>{importErrors[i]}</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+                      {importErrors[i] && (
+                        <s-text tone="critical">{importErrors[i]}</s-text>
+                      )}
+                    </s-stack>
+                  </s-stack>
+                </s-grid>
+              </s-stack>
             );
           })
         )}
-      </div>
-    </details>
+      </s-stack>
+      )}
+    </s-stack>
   );
 }
-
-/* =========================
-   STYLES
-========================= */
-
-const sectionStyle: React.CSSProperties = {
-  marginBottom: "1.5rem",
-  border: "1px solid #d1d5db",
-  borderRadius: "8px",
-  overflow: "hidden",
-};
-
-const summaryStyle: React.CSSProperties = {
-  padding: "0.85rem 1.25rem",
-  fontWeight: 600,
-  fontSize: "1.05rem",
-  cursor: "pointer",
-  backgroundColor: "#f3f4f6",
-  userSelect: "none",
-  listStyle: "none",
-  display: "flex",
-  alignItems: "center",
-  gap: "0.5rem",
-};
-
-const nestedSectionStyle: React.CSSProperties = {
-  marginBottom: "0.5rem",
-  border: "1px solid #e5e7eb",
-  borderRadius: "6px",
-  overflow: "hidden",
-};
-
-const articleSectionStyle: React.CSSProperties = {
-  marginBottom: "0.4rem",
-  border: "1px solid #ede9fe",
-  borderRadius: "5px",
-  overflow: "hidden",
-};
-
-const nestedSummaryStyle: React.CSSProperties = {
-  padding: "0.6rem 1rem",
-  fontWeight: 500,
-  cursor: "pointer",
-  backgroundColor: "#f9fafb",
-  userSelect: "none",
-  listStyle: "none",
-  display: "flex",
-  alignItems: "center",
-  gap: "0.5rem",
-};
-
-const badgeStyle: React.CSSProperties = {
-  fontSize: "0.75rem",
-  fontWeight: 400,
-  color: "#6b7280",
-  backgroundColor: "#e5e7eb",
-  padding: "0.1rem 0.5rem",
-  borderRadius: "999px",
-};
-
-const typeBadgeStyle: React.CSSProperties = {
-  fontSize: "0.78rem",
-  backgroundColor: "#ede9fe",
-  color: "#5b21b6",
-  padding: "0.1rem 0.5rem",
-  borderRadius: "4px",
-  fontFamily: "monospace",
-};
-
-const tableStyle: React.CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-  fontSize: "0.88rem",
-};
-
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  backgroundColor: "#f3f4f6",
-  borderBottom: "1px solid #e5e7eb",
-  fontWeight: 600,
-  color: "#374151",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "0.45rem 0.75rem",
-  borderBottom: "1px solid #f3f4f6",
-  verticalAlign: "middle",
-};
 
 /* =========================
    IMAGE EDITOR COMPONENT
@@ -1704,7 +1712,17 @@ function extractImagesFromHtml(html?: string | null): ImgInfo[] {
   }));
 }
 
-function ArticleImageAltEditor({ article }: { article: ArticleNode }) {
+type ArticleImageAltEditorProps = {
+  article: ArticleNode;
+  isArticleOpen: boolean;
+  onToggleArticle: () => void;
+};
+
+function ArticleImageAltEditor({
+  article,
+  isArticleOpen,
+  onToggleArticle,
+}: ArticleImageAltEditorProps) {
   const saveFetcher = useFetcher();
   const importFetcher = useFetcher();
 
@@ -1826,157 +1844,131 @@ function ArticleImageAltEditor({ article }: { article: ArticleNode }) {
   const isShopifyCdn = (src: string) => src.includes("cdn.shopify.com");
   const isImporting = importFetcher.state !== "idle";
 
+  function stripHtml(html: any) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return doc.body.innerText || '';
+  }
+
+  const summaryText = stripHtml(article.summary);
+
   return (
-    <div style={{ marginTop: "1rem" }}>
-      <p>
-        <strong>Images missing alt text:</strong> {missingAltCount}
-      </p>
+    <s-box 
+      key={article.id}
+      background="base"
+      borderRadius="base"
+      borderWidth="base"
+    >
+      <s-clickable
+        id={`article-toggle-${article.id}`}
+        onClick={onToggleArticle}
+        padding="small"
+        borderRadius="base"
+      >
+        <s-stack direction="inline" alignItems="center" justifyContent="space-between" inlineSize="100%">
+          <s-stack direction="inline" alignItems="center" justifyContent="center" gap="base">
+            <s-text>{article.title}</s-text>
+            <s-badge>Images missing alt text: { missingAltCount }</s-badge>
+          </s-stack>
+          {isArticleOpen ? <s-icon type="caret-up"/> : <s-icon type="caret-down"/>}
+        </s-stack>
+      </s-clickable>
 
-      {images.map((img, i) => {
-        const isSaving = savingIndex === i;
-        const isChanged = img.alt !== extractImagesFromHtml(article.body ?? "")[i]?.alt;
+      {isArticleOpen && (
+        <s-stack 
+          padding="base"
+          gap="base"
+        >
+          {article.summary && (
+            <s-text>{ summaryText }</s-text>
+          )}
 
-        return (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              gap: "1rem",
-              alignItems: "flex-start",
-              marginBottom: "1.5rem",
-              padding: "1rem",
-              backgroundColor: "#f9f9f9",
-              borderRadius: "4px",
-              border: img.alt ? "1px solid #e0e0e0" : "1px solid #ffcccc",
-            }}
-          >
-            {/* IMAGE */}
-            <img
-              src={img.src}
-              alt={img.alt}
-              style={{
-                width: 120,
-                height: 80,
-                objectFit: "contain",
-                flexShrink: 0,
-              }}
-            />
+            {images.map((img, i) => {
+              const isSaving = savingIndex === i;
+              const isChanged = img.alt !== extractImagesFromHtml(article.body ?? "")[i]?.alt;
 
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {/* LABEL */}
-              <label
-                style={{
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  color: "#444",
-                  marginBottom: "0.25rem",
-                  display: "block",
-                }}
-              >
-                Alt Text
-              </label>
-
-              {/* INPUT + SAVE */}
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <input
-                  value={img.alt}
-                  onChange={(e) => updateAlt(i, e.target.value)}
-                  placeholder="Describe the image for accessibility..."
-                  style={{
-                    flex: 1,
-                    padding: "0.4rem",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                  }}
-                />
-
-                <button
-                  onClick={() => saveAltToShopify(i)}
-                  disabled={!isChanged || isSaving}
-                  style={{
-                    padding: "0.4rem 0.75rem",
-                    cursor: !isChanged || isSaving ? "not-allowed" : "pointer",
-                    opacity: !isChanged || isSaving ? 0.6 : 1,
-                    backgroundColor: "#111",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "4px",
-                  }}
+              return (
+                <s-grid
+                  key={i}
+                  gridTemplateColumns="130px 1fr"
+                  gap="base"
+                  alignItems="center"
                 >
-                  {isSaving ? "Saving..." : "Save"}
-                </button>
-              </div>
+                  {/* IMAGE */}
+                  <s-image
+                    src={img.src}
+                    alt={img.alt}
+                    aspectRatio="1/1"
+                    borderRadius="base"
+                  />
 
-              {/* SUCCESS */}
-              {saveSuccess[i] && (
-                <div
-                  style={{
-                    color: "#2e7d32",
-                    fontSize: "0.75rem",
-                    marginTop: "0.25rem",
-                  }}
-                >
-                  ✓ Saved
-                </div>
-              )}
+                  <s-stack gap="small">
+                    {/* LABEL */}
+                    <s-heading>Alt Text</s-heading>
 
-              {/* IMAGE SRC */}
-              <p
-                style={{
-                  fontSize: "0.75rem",
-                  color: "#666",
-                  marginTop: "0.5rem",
-                  wordBreak: "break-all",
-                  fontFamily: "monospace",
-                }}
-              >
-                {img.src}
-              </p>
+                    {/* INPUT + SAVE */}
+                    <s-stack direction="inline" alignItems="center" gap="base" inlineSize="100%">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <s-text-field
+                          value={img.alt}
+                          onChange={(e: any) => updateAlt(i, e.currentTarget.value)}
+                          placeholder="Describe the image for accessibility..."
+                        />
+                      </div>
 
-              {/* IMPORT BUTTON */}
-              {isShopifyCdn(img.src) ? (
-                <span
-                  style={{
-                    fontSize: "0.8rem",
-                    color: "#2e7d32",
-                    fontWeight: 600,
-                  }}
-                >
-                  ✓ Already on Shopify CDN
-                </span>
-              ) : (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                  }}
-                >
-                  <button
-                    onClick={() => importImage(i)}
-                    disabled={isImporting}
-                    style={{
-                      padding: "0.3rem 0.75rem",
-                      cursor: isImporting ? "not-allowed" : "pointer",
-                      opacity: isImporting ? 0.6 : 1,
-                    }}
-                  >
-                    {importingIndex === i && isImporting
-                      ? "Importing…"
-                      : "Import to Shopify CDN"}
-                  </button>
+                      <s-button
+                        onClick={() => saveAltToShopify(i)}
+                        disabled={!isChanged || isSaving}
+                      >
+                        {isSaving ? "Saving..." : "Save"}
+                      </s-button>
+                    </s-stack>
 
-                  {importErrors[i] && (
-                    <span style={{ color: "red", fontSize: "0.8rem" }}>
-                      {importErrors[i]}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+                    {/* SUCCESS */}
+                    {saveSuccess[i] && (
+                      <s-text
+                        tone="success"
+                      >
+                        ✓ Saved
+                      </s-text>
+                    )}
+
+                    {/* IMAGE SRC */}
+                    <s-text>
+                      {img.src}
+                    </s-text>
+
+                    {/* IMPORT BUTTON */}
+                    {isShopifyCdn(img.src) ? (
+                      <s-text
+                        tone="success"
+                      >
+                        ✓ Already on Shopify CDN
+                      </s-text>
+                    ) : (
+                      <s-stack direction="inline" alignItems="center" gap="small"
+                      >
+                        <s-button
+                          onClick={() => importImage(i)}
+                          disabled={isImporting}
+                        >
+                          {importingIndex === i && isImporting
+                            ? "Importing…"
+                            : "Import to Shopify CDN"}
+                        </s-button>
+
+                        {importErrors[i] && (
+                          <s-text tone="warning">
+                            {importErrors[i]}
+                          </s-text>
+                        )}
+                      </s-stack>
+                    )}
+                  </s-stack>
+                </s-grid>
+              );
+            })}
+        </s-stack>
+      )}
+    </s-box>
   );
 }

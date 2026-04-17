@@ -787,73 +787,76 @@ export default function ImportPage() {
     | undefined;
 
   return (
-    <div style={{ padding: "2rem" }}>
-      <s-section heading="Gift Cards">
-        <div style={{ display: "grid", gap: "1rem" }}>
-          <div>
-            <h3 style={{ margin: "0 0 0.5rem" }}>Existing Gift Cards</h3>
-            {giftCards.length === 0 ? (
-              <p style={{ margin: 0, color: "#666" }}>No gift cards found.</p>
-            ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: "0.4rem" }}>Code</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: "0.4rem" }}>Amount</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: "0.4rem" }}>Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {giftCards.map((giftCard) => (
-                    <tr key={giftCard.id}>
-                      <td style={{ borderBottom: "1px solid #f0f0f0", padding: "0.4rem" }}>
-                        {`****${giftCard.lastCharacters ?? ""}`}
-                      </td>
-                      <td style={{ borderBottom: "1px solid #f0f0f0", padding: "0.4rem" }}>
-                        {giftCard.balance.amount} {giftCard.balance.currencyCode}
-                      </td>
-                      <td style={{ borderBottom: "1px solid #f0f0f0", padding: "0.4rem" }}>
-                        {new Date(giftCard.createdAt).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div>
-            <h3 style={{ margin: "0 0 0.5rem" }}>Add Gift Card</h3>
-            <addGiftCardFetcher.Form method="post" style={{ display: "grid", gap: "0.75rem", maxWidth: "360px" }}>
-              <input type="hidden" name="intent" value="addGiftCard" />
-              <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Gift card code</span>
-                <input name="giftCardCode" type="text" required />
-              </label>
-              <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Initial value</span>
-                <input name="initialValue" type="number" min="0.01" step="0.01" required />
-              </label>
-              <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Note</span>
-                <input name="note" type="text" />
-              </label>
-              <button type="submit" disabled={addGiftCardFetcher.state !== "idle"}>
-                {addGiftCardFetcher.state !== "idle" ? "Adding..." : "Add gift card"}
-              </button>
-            </addGiftCardFetcher.Form>
-
-            {addGiftCardData?.error && (
-              <p style={{ color: "red", marginTop: "0.75rem" }}>{addGiftCardData.error}</p>
-            )}
-            {addGiftCardData?.success && !addGiftCardData.error && (
-              <p style={{ color: "green", marginTop: "0.75rem" }}>
-                Gift card created successfully ({addGiftCardData.giftCardCode ?? "code hidden"}). Refresh to see it in the list.
-              </p>
-            )}
-          </div>
-        </div>
+    <s-page heading="Gift Card Import">
+      <s-section heading="Existing Gift Cards">
+        {giftCards.length === 0 ? (
+          <s-text color="subdued">No gift cards found.</s-text>
+        ) : (
+          <s-table>
+            <s-table-header-row>
+              <s-table-header>Code</s-table-header>
+              <s-table-header>Amount</s-table-header>
+              <s-table-header>Created</s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {giftCards.map((giftCard) => (
+                <s-table-row key={giftCard.id}>
+                  <s-table-cell>
+                    {`****${giftCard.lastCharacters ?? ""}`}
+                  </s-table-cell>
+                  <s-table-cell>
+                    {giftCard.balance.amount} {giftCard.balance.currencyCode}
+                  </s-table-cell>
+                  <s-table-cell>
+                    {new Date(giftCard.createdAt).toLocaleString()}
+                  </s-table-cell>
+                </s-table-row>
+              ))}
+            </s-table-body>
+          </s-table>
+        )}
       </s-section>
-    </div>
+      
+      <s-section heading="Add a Gift Card">
+        <addGiftCardFetcher.Form method="post">
+          <s-stack
+            gap="base"
+          >
+            <input type="hidden" name="intent" value="addGiftCard" />
+            <s-text-field
+              label="Gift card code"
+              name="giftCardCode"
+              required
+            />
+            <s-number-field
+              label="Initial value"
+              name="initialValue"
+              inputMode="decimal"
+              prefix="$"
+              suffix="USD"
+              min={0.01}
+              step={0.01}
+              required
+            />
+            <s-text-field 
+              label="Note"
+              name="note"
+            />
+            <s-button type="submit" disabled={addGiftCardFetcher.state !== "idle"}>
+              {addGiftCardFetcher.state !== "idle" ? "Adding..." : "Add gift card"}
+            </s-button>
+          </s-stack>
+        </addGiftCardFetcher.Form>
+
+        {addGiftCardData?.error && (
+          <s-text tone="critical">{addGiftCardData.error}</s-text>
+        )}
+        {addGiftCardData?.success && !addGiftCardData.error && (
+          <s-text tone="success">
+            Gift card created successfully ({addGiftCardData.giftCardCode ?? "code hidden"}). Refresh to see it in the list.
+          </s-text>
+        )}
+      </s-section>
+    </s-page>
   );
 }
