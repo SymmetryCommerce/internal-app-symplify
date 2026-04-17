@@ -19,8 +19,17 @@ type CsvMetaobjectField = {
 type CsvMetaobjectEntry = {
   handle: string;
   definitionHandle: string;
+  command: MetaobjectImportCommand;
   fields: CsvMetaobjectField[];
 };
+
+type MetaobjectImportCommand =
+  | "NEW"
+  | "MERGE"
+  | "UPDATE"
+  | "REPLACE"
+  | "DELETE"
+  | "IGNORE";
 
 type ImportErrorLog = {
   definitionHandle: string;
@@ -46,9 +55,21 @@ type MetaobjectImportActionData = {
 const REQUIRED_METAOBJECT_IMPORT_HEADERS = [
   "Handle",
   "Definition: Handle",
+  "Command",
   "Field",
   "Value",
 ] as const;
+
+const normalizeHeader = (header: string) => header.trim().toLowerCase();
+
+const ALLOWED_METAOBJECT_COMMANDS: MetaobjectImportCommand[] = [
+  "NEW",
+  "MERGE",
+  "UPDATE",
+  "REPLACE",
+  "DELETE",
+  "IGNORE",
+];
 
 const IMPORT_INTENT = "importMetaobjectsCsv";
 
@@ -126,11 +147,11 @@ const validateMetaobjectImportCsvRows = (
   const [headerRow, ...dataRows] = csvRows;
   const headerMap = new Map<string, number>();
   headerRow.forEach((header, index) => {
-    headerMap.set(header.trim(), index);
+    headerMap.set(normalizeHeader(header), index);
   });
 
   const missingHeaders = REQUIRED_METAOBJECT_IMPORT_HEADERS.filter(
-    (header) => !headerMap.has(header),
+    (header) => !headerMap.has(normalizeHeader(header)),
   );
 
   if (missingHeaders.length > 0) {
@@ -144,21 +165,29 @@ const validateMetaobjectImportCsvRows = (
     return { ok: false, error: "CSV has headers but no data rows." };
   }
 
-  const handleIndex = headerMap.get("Handle")!;
-  const definitionHandleIndex = headerMap.get("Definition: Handle")!;
-  const fieldIndex = headerMap.get("Field")!;
-  const valueIndex = headerMap.get("Value")!;
+  const handleIndex = headerMap.get(normalizeHeader("Handle"))!;
+  const definitionHandleIndex = headerMap.get(normalizeHeader("Definition: Handle"))!;
+  const commandIndex = headerMap.get(normalizeHeader("Command"))!;
+  const fieldIndex = headerMap.get(normalizeHeader("Field"))!;
+  const valueIndex = headerMap.get(normalizeHeader("Value"))!;
 
   const validationErrors: string[] = [];
   const groupedEntries = new Map<
     string,
-    { handle: string; definitionHandle: string; fieldMap: Map<string, string> }
+    {
+      handle: string;
+      definitionHandle: string;
+      command: MetaobjectImportCommand;
+      fieldMap: Map<string, string>;
+    }
   >();
 
   dataRows.forEach((row, rowIndex) => {
     const csvRowNumber = rowIndex + 2;
     const handle = (row[handleIndex] ?? "").trim();
     const definitionHandle = (row[definitionHandleIndex] ?? "").trim();
+    const commandRaw = (row[commandIndex] ?? "").trim().toUpperCase();
+    const command = commandRaw as MetaobjectImportCommand;
     const field = (row[fieldIndex] ?? "").trim();
     const value = (row[valueIndex] ?? "").trim();
 
@@ -170,11 +199,27 @@ const validateMetaobjectImportCsvRows = (
       validationErrors.push(`Row ${csvRowNumber}: Definition: Handle is required.`);
     }
 
-    if (!field) {
+    if (!commandRaw) {
+      validationErrors.push(`Row ${csvRowNumber}: Command is required.`);
+    }
+
+    if (commandRaw && !ALLOWED_METAOBJECT_COMMANDS.includes(command)) {
+      validationErrors.push(
+        `Row ${csvRowNumber}: Command '${commandRaw}' is invalid. Allowed values: ${ALLOWED_METAOBJECT_COMMANDS.join(", ")}.`,
+      );
+    }
+
+    const requiresField = command !== "DELETE" && command !== "IGNORE";
+
+    if (requiresField && !field) {
       validationErrors.push(`Row ${csvRowNumber}: Field is required.`);
     }
 
-    if (!handle || !definitionHandle || !field) {
+    if (!handle || !definitionHandle || !ALLOWED_METAOBJECT_COMMANDS.includes(command)) {
+      return;
+    }
+
+    if (requiresField && !field) {
       return;
     }
 
@@ -182,14 +227,24 @@ const validateMetaobjectImportCsvRows = (
     const existing = groupedEntries.get(entryKey);
 
     if (existing) {
-      existing.fieldMap.set(field, value);
+      if (existing.command !== command) {
+        validationErrors.push(
+          `Row ${csvRowNumber}: Command '${command}' conflicts with previous rows for Handle '${handle}' and Definition: Handle '${definitionHandle}' (currently '${existing.command}').`,
+        );
+        return;
+      }
+
+      if (requiresField) {
+        existing.fieldMap.set(field, value);
+      }
       return;
     }
 
     groupedEntries.set(entryKey, {
       handle,
       definitionHandle,
-      fieldMap: new Map([[field, value]]),
+      command,
+      fieldMap: requiresField ? new Map([[field, value]]) : new Map(),
     });
   });
 
@@ -204,6 +259,7 @@ const validateMetaobjectImportCsvRows = (
   const entries: CsvMetaobjectEntry[] = Array.from(groupedEntries.values()).map((entry) => ({
     handle: entry.handle,
     definitionHandle: entry.definitionHandle,
+    command: entry.command,
     fields: Array.from(entry.fieldMap.entries()).map(([key, value]) => ({ key, value })),
   }));
 
@@ -296,7 +352,126 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<Metaobjec
     failedCount: 0,
   };
 
+  const findMetaobjectByHandle = async (entry: CsvMetaobjectEntry) => {
+    const lookupRes = await admin.graphql(
+      `
+      query GetMetaobjectByHandle($handle: MetaobjectHandleInput!) {
+        metaobjectByHandle(handle: $handle) {
+          id
+          handle
+        }
+      }
+      `,
+      {
+        variables: {
+          handle: {
+            type: entry.definitionHandle,
+            handle: entry.handle,
+          },
+        },
+      },
+    );
+
+    const lookupJson = await lookupRes.json();
+    return lookupJson.data?.metaobjectByHandle as { id: string; handle: string } | null;
+  };
+
+  const createMetaobject = async (entry: CsvMetaobjectEntry) => {
+    const createRes = await admin.graphql(
+      `
+      mutation CreateMetaobject($metaobject: MetaobjectCreateInput!) {
+        metaobjectCreate(metaobject: $metaobject) {
+          metaobject {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+      `,
+      {
+        variables: {
+          metaobject: {
+            type: entry.definitionHandle,
+            handle: entry.handle,
+            fields: entry.fields,
+          },
+        },
+      },
+    );
+
+    const createJson = await createRes.json();
+    const createErrors = createJson.data?.metaobjectCreate?.userErrors ?? [];
+
+    if (createErrors.length > 0) {
+      throw new Error(createErrors[0].message);
+    }
+  };
+
+  const updateMetaobject = async (entry: CsvMetaobjectEntry, id: string) => {
+    const updateRes = await admin.graphql(
+      `
+      mutation UpdateMetaobject($id: ID!, $metaobject: MetaobjectUpdateInput!) {
+        metaobjectUpdate(id: $id, metaobject: $metaobject) {
+          metaobject {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+      `,
+      {
+        variables: {
+          id,
+          metaobject: {
+            fields: entry.fields,
+          },
+        },
+      },
+    );
+
+    const updateJson = await updateRes.json();
+    const updateErrors = updateJson.data?.metaobjectUpdate?.userErrors ?? [];
+
+    if (updateErrors.length > 0) {
+      throw new Error(updateErrors[0].message);
+    }
+  };
+
+  const deleteMetaobject = async (id: string) => {
+    const deleteRes = await admin.graphql(
+      `
+      mutation DeleteMetaobject($id: ID!) {
+        metaobjectDelete(id: $id) {
+          deletedId
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+      `,
+      { variables: { id } },
+    );
+
+    const deleteJson = await deleteRes.json();
+    const deleteErrors = deleteJson.data?.metaobjectDelete?.userErrors ?? [];
+
+    if (deleteErrors.length > 0) {
+      throw new Error(deleteErrors[0].message);
+    }
+  };
+
   for (const entry of entries) {
+    if (entry.command === "IGNORE") {
+      continue;
+    }
+
     if (missingDefinitions.has(entry.definitionHandle) || !existingDefinitions.has(entry.definitionHandle)) {
       summary.failedCount += 1;
       errorLogs.push({
@@ -308,109 +483,76 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<Metaobjec
     }
 
     try {
-      const lookupRes = await admin.graphql(
-        `
-        query GetMetaobjectByHandle($handle: MetaobjectHandleInput!) {
-          metaobjectByHandle(handle: $handle) {
-            id
-            handle
-          }
-        }
-        `,
-        {
-          variables: {
-            handle: {
-              type: entry.definitionHandle,
-              handle: entry.handle,
-            },
-          },
-        },
-      );
+      const existingMetaobject = await findMetaobjectByHandle(entry);
 
-      const lookupJson = await lookupRes.json();
-      const existingMetaobject = lookupJson.data?.metaobjectByHandle;
-
-      if (existingMetaobject?.id) {
-        const updateRes = await admin.graphql(
-          `
-          mutation UpdateMetaobject($id: ID!, $metaobject: MetaobjectUpdateInput!) {
-            metaobjectUpdate(id: $id, metaobject: $metaobject) {
-              metaobject {
-                id
-              }
-              userErrors {
-                field
-                message
-              }
-            }
-          }
-          `,
-          {
-            variables: {
-              id: existingMetaobject.id,
-              metaobject: {
-                fields: entry.fields,
-              },
-            },
-          },
-        );
-
-        const updateJson = await updateRes.json();
-        const updateErrors = updateJson.data?.metaobjectUpdate?.userErrors ?? [];
-
-        if (updateErrors.length > 0) {
+      if (entry.command === "NEW") {
+        if (existingMetaobject?.id) {
           summary.failedCount += 1;
           errorLogs.push({
             definitionHandle: entry.definitionHandle,
             handle: entry.handle,
-            message: updateErrors[0].message,
+            message: "Metaobject already exists, so NEW command failed.",
           });
           continue;
         }
 
+        await createMetaobject(entry);
+        summary.createdCount += 1;
+        continue;
+      }
+
+      if (entry.command === "MERGE") {
+        if (existingMetaobject?.id) {
+          await updateMetaobject(entry, existingMetaobject.id);
+          summary.updatedCount += 1;
+          continue;
+        }
+
+        await createMetaobject(entry);
+        summary.createdCount += 1;
+        continue;
+      }
+
+      if (entry.command === "UPDATE") {
+        if (!existingMetaobject?.id) {
+          summary.failedCount += 1;
+          errorLogs.push({
+            definitionHandle: entry.definitionHandle,
+            handle: entry.handle,
+            message: "Metaobject was not found, so UPDATE command failed.",
+          });
+          continue;
+        }
+
+        await updateMetaobject(entry, existingMetaobject.id);
         summary.updatedCount += 1;
         continue;
       }
 
-      const createRes = await admin.graphql(
-        `
-        mutation CreateMetaobject($metaobject: MetaobjectCreateInput!) {
-          metaobjectCreate(metaobject: $metaobject) {
-            metaobject {
-              id
-            }
-            userErrors {
-              field
-              message
-            }
-          }
+      if (entry.command === "REPLACE") {
+        if (existingMetaobject?.id) {
+          await deleteMetaobject(existingMetaobject.id);
         }
-        `,
-        {
-          variables: {
-            metaobject: {
-              type: entry.definitionHandle,
-              handle: entry.handle,
-              fields: entry.fields,
-            },
-          },
-        },
-      );
 
-      const createJson = await createRes.json();
-      const createErrors = createJson.data?.metaobjectCreate?.userErrors ?? [];
-
-      if (createErrors.length > 0) {
-        summary.failedCount += 1;
-        errorLogs.push({
-          definitionHandle: entry.definitionHandle,
-          handle: entry.handle,
-          message: createErrors[0].message,
-        });
+        await createMetaobject(entry);
+        summary.createdCount += 1;
         continue;
       }
 
-      summary.createdCount += 1;
+      if (entry.command === "DELETE") {
+        if (!existingMetaobject?.id) {
+          summary.failedCount += 1;
+          errorLogs.push({
+            definitionHandle: entry.definitionHandle,
+            handle: entry.handle,
+            message: "Metaobject was not found, so DELETE command failed.",
+          });
+          continue;
+        }
+
+        await deleteMetaobject(existingMetaobject.id);
+        summary.updatedCount += 1;
+      }
     } catch (error) {
       summary.failedCount += 1;
       errorLogs.push({
@@ -564,12 +706,11 @@ export default function MetaobjectExport() {
       <div style={{ marginTop: "1.5rem", paddingTop: "1rem", borderTop: "1px solid #ddd" }}>
         <h2 style={{ marginTop: 0 }}>Metaobject Import (CSV)</h2>
         <p style={{ marginBottom: "0.5rem" }}>
-          Required columns: Handle, Definition: Handle, Field, Value. Any optional
-          "Definition: Name" or "Command" columns are ignored.
+          Required columns: Handle, Definition: Handle, Command, Field, Value.
         </p>
         <p style={{ marginTop: 0 }}>
-          Import uses merge behavior: only fields listed in your CSV are updated.
-          Other existing metaobject fields remain unchanged.
+          Supported Command values: NEW, MERGE, UPDATE, REPLACE, DELETE, IGNORE.
+          Command is required on every row.
         </p>
 
         <importFetcher.Form method="post" encType="multipart/form-data" style={{ display: "grid", gap: "0.75rem", maxWidth: "500px" }}>
