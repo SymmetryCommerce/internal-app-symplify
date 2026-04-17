@@ -71,57 +71,56 @@ export default function MetaobjectExport() {
   };
 
   return (
-    <div style={{ padding: "1rem", maxWidth: "700px" }}>
-      <h1>Handle Export</h1>
-      <p>
-        Export separate CSV lists of handles from products, collections, blog posts (with blog handle), and pages.
-      </p>
+    <s-page heading="Export All Metaobjects">
+      <s-section heading="Handle Export">
+        <s-stack gap="base">
+          <s-text>
+            Export separate CSV lists of handles from products, collections, blog posts (with blog handle), and pages.
+          </s-text>
 
-      <div style={{ display: "grid", gap: "0.5rem", marginTop: "1rem" }}>
-        {EXPORT_OPTIONS.map((option) => (
-          <button
-            key={option.resource}
-            type="button"
-            onClick={() => handleExport(option.resource)}
-            disabled={activeExport !== null}
-          >
-            {activeExport === option.resource ? "Exporting..." : option.label}
-          </button>
-        ))}
-      </div>
+          <s-stack direction="inline" gap="small">
+            {EXPORT_OPTIONS.map((option) => (
+              <s-button
+                key={option.resource}
+                type="button"
+                onClick={() => handleExport(option.resource)}
+                disabled={activeExport !== null}
+              >
+                {activeExport === option.resource ? "Exporting..." : option.label}
+              </s-button>
+            ))}
+          </s-stack>
+        </s-stack>
+      </s-section>
 
-      <div style={{ marginTop: "1.5rem", paddingTop: "1rem", borderTop: "1px solid #ddd" }}>
-        <h2 style={{ marginTop: 0 }}>Metaobject Export</h2>
-        <p>Export all metaobjects to CSV, with an optional column-level export of field values.</p>
+      <s-section heading="Metaobject Export">
+        <s-stack gap="small">
+          <s-text>Export all metaobjects to CSV, with an optional column-level export of field values.</s-text>
 
-        <label style={{ display: "block", marginBottom: "0.75rem" }}>
-          <input
-            type="checkbox"
+          <s-checkbox
+            label="Include metaobject field values"
             checked={includeFieldValues}
             onChange={(event) => setIncludeFieldValues(event.currentTarget.checked)}
             disabled={activeExport !== null}
-            style={{ marginRight: "0.5rem" }}
           />
-          Include metaobject field values
-        </label>
 
-        <button
-          type="button"
-          onClick={() => handleExport("metaobjects", includeFieldValues)}
-          disabled={activeExport !== null}
-        >
-          {activeExport === "metaobjects" ? "Exporting..." : "Export Metaobjects"}
-        </button>
-      </div>
+          <s-button
+            onClick={() => handleExport("metaobjects", includeFieldValues)}
+            disabled={activeExport !== null}
+          >
+            {activeExport === "metaobjects" ? "Exporting..." : "Export Metaobjects"}
+          </s-button>
+        </s-stack>
+      </s-section>
 
       {activeExport ? (
-        <div style={{ marginTop: "1rem" }}>
-          <p>Preparing CSV export. This can take a while for large catalogs.</p>
+        <s-stack>
+          <s-text>Preparing CSV export. This can take a while for large catalogs.</s-text>
           <progress style={{ width: "100%" }} />
-        </div>
+        </s-stack>
       ) : null}
 
-      {errorMessage ? <p style={{ color: "#b00020", marginTop: "0.75rem" }}>{errorMessage}</p> : null}
-    </div>
+      {errorMessage ? <s-text tone="critical">{errorMessage}</s-text> : null}
+    </s-page>
   );
 }
