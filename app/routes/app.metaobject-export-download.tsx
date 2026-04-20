@@ -393,7 +393,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   if (resource === "articles") {
     const entries = await fetchAllArticleHandlesWithBlogs(admin);
     const csv = buildHandleCsv(
-      ["blogHandle", "articleHandle"],
+      ["Blog: Handle", "Handle"],
       entries.map((entry) => [entry.blogHandle, entry.handle])
     );
     const filename = `blog-post-handles-export-${new Date().toISOString().slice(0, 10)}.csv`;
