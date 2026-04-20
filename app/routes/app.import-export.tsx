@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   useFetcher,
   type ActionFunctionArgs,
@@ -588,8 +588,21 @@ export default function MetaobjectExport() {
   const [includeFieldValues, setIncludeFieldValues] = useState(false);
   const [includeCommandColumn, setIncludeCommandColumn] = useState(false);
   const importFetcher = useFetcher<MetaobjectImportActionData>();
+  const csvFileInputRef = useRef<HTMLInputElement | null>(null);
+  const previousImportFetcherState = useRef(importFetcher.state);
 
   const importResult = importFetcher.data;
+
+  useEffect(() => {
+    const importFinished =
+      previousImportFetcherState.current !== "idle" && importFetcher.state === "idle";
+
+    if (importFinished && csvFileInputRef.current) {
+      csvFileInputRef.current.value = "";
+    }
+
+    previousImportFetcherState.current = importFetcher.state;
+  }, [importFetcher.state]);
 
   const downloadErrorLog = () => {
     const logs = importResult?.errorLogs;
@@ -726,6 +739,7 @@ export default function MetaobjectExport() {
                 <s-stack gap="none">
                   <s-text>CSV file</s-text>
                   <input
+                    ref={csvFileInputRef}
                     name="csvFile"
                     type="file"
                     accept=".csv,text/csv"
