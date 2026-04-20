@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   useLoaderData,
   useFetcher,
@@ -1014,110 +1014,122 @@ export default function ImportPage() {
     | undefined;
 
   return (
-    <div style={{ padding: "2rem" }}>
-      <s-section heading="Gift Cards">
-        <div style={{ display: "grid", gap: "1rem" }}>
-          <div>
-            <h3 style={{ margin: "0 0 0.5rem" }}>Existing Gift Cards</h3>
-            {giftCards.length === 0 ? (
-              <p style={{ margin: 0, color: "#666" }}>No gift cards found.</p>
-            ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: "0.4rem" }}>Code</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: "0.4rem" }}>Amount</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: "0.4rem" }}>Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {giftCards.map((giftCard) => (
-                    <tr key={giftCard.id}>
-                      <td style={{ borderBottom: "1px solid #f0f0f0", padding: "0.4rem" }}>
-                        {`****${giftCard.lastCharacters ?? ""}`}
-                      </td>
-                      <td style={{ borderBottom: "1px solid #f0f0f0", padding: "0.4rem" }}>
-                        {giftCard.balance.amount} {giftCard.balance.currencyCode}
-                      </td>
-                      <td style={{ borderBottom: "1px solid #f0f0f0", padding: "0.4rem" }}>
-                        {new Date(giftCard.createdAt).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div>
-            <h3 style={{ margin: "0 0 0.5rem" }}>Add Gift Card</h3>
-            <addGiftCardFetcher.Form method="post" style={{ display: "grid", gap: "0.75rem", maxWidth: "360px" }}>
-              <input type="hidden" name="intent" value="addGiftCard" />
-              <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Gift card code</span>
-                <input name="giftCardCode" type="text" required />
-              </label>
-              <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Initial value</span>
-                <input name="initialValue" type="number" min="0.01" step="0.01" required />
-              </label>
-              <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Note</span>
-                <input name="note" type="text" />
-              </label>
-              <button type="submit" disabled={addGiftCardFetcher.state !== "idle"}>
-                {addGiftCardFetcher.state !== "idle" ? "Adding..." : "Add gift card"}
-              </button>
-            </addGiftCardFetcher.Form>
-
-            {addGiftCardData?.error && (
-              <p style={{ color: "red", marginTop: "0.75rem" }}>{addGiftCardData.error}</p>
-            )}
-            {addGiftCardData?.success && !addGiftCardData.error && (
-              <p style={{ color: "green", marginTop: "0.75rem" }}>
-                Gift card created successfully ({addGiftCardData.giftCardCode ?? "code hidden"}). Refresh to see it in the list.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <h3 style={{ margin: "0 0 0.5rem" }}>Import Gift Cards (CSV)</h3>
-            <p style={{ margin: "0 0 0.5rem", color: "#666" }}>
-              Required headers: Gift card code, Initial value, Note
-            </p>
-            <importGiftCardsFetcher.Form
-              method="post"
-              encType="multipart/form-data"
-              style={{ display: "grid", gap: "0.75rem", maxWidth: "460px" }}
-            >
-              <input type="hidden" name="intent" value="importGiftCardsCsv" />
-              <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>CSV file</span>
-                <input name="csvFile" type="file" accept=".csv,text/csv" required />
-              </label>
-              <button type="submit" disabled={importGiftCardsFetcher.state !== "idle"}>
-                {importGiftCardsFetcher.state !== "idle" ? "Importing..." : "Import gift cards"}
-              </button>
-            </importGiftCardsFetcher.Form>
-
-            {importGiftCardsData?.error && (
-              <p style={{ color: "red", marginTop: "0.75rem" }}>{importGiftCardsData.error}</p>
-            )}
-            {importGiftCardsData?.validationErrors && importGiftCardsData.validationErrors.length > 0 && (
-              <ul style={{ color: "red", marginTop: "0.5rem", paddingLeft: "1.25rem" }}>
-                {importGiftCardsData.validationErrors.map((errorMessage) => (
-                  <li key={errorMessage}>{errorMessage}</li>
-                ))}
-              </ul>
-            )}
-            {importGiftCardsData?.success && !importGiftCardsData.error && (
-              <p style={{ color: "green", marginTop: "0.75rem" }}>
-                Successfully imported {importGiftCardsData.importedCount ?? 0} gift card(s).
-              </p>
-            )}
-          </div>
-        </div>
+    <s-page heading="Gift Card Import">
+      <s-section heading="Existing Gift Cards">
+        {giftCards.length === 0 ? (
+          <s-text color="subdued">No gift cards found.</s-text>
+        ) : (
+          <s-table>
+            <s-table-header-row>
+              <s-table-header>Code</s-table-header>
+              <s-table-header>Amount</s-table-header>
+              <s-table-header>Created</s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {giftCards.map((giftCard) => (
+                <s-table-row key={giftCard.id}>
+                  <s-table-cell>
+                    {`****${giftCard.lastCharacters ?? ""}`}
+                  </s-table-cell>
+                  <s-table-cell>
+                    {giftCard.balance.amount} {giftCard.balance.currencyCode}
+                  </s-table-cell>
+                  <s-table-cell>
+                    {new Date(giftCard.createdAt).toLocaleString()}
+                  </s-table-cell>
+                </s-table-row>
+              ))}
+            </s-table-body>
+          </s-table>
+        )}
       </s-section>
-    </div>
+
+      <s-section heading="Add a Gift Card">
+        <addGiftCardFetcher.Form method="post">
+          <s-stack gap="base">
+            <input type="hidden" name="intent" value="addGiftCard" />
+            <s-text-field
+              label="Gift card code"
+              name="giftCardCode"
+              required
+            />
+            <s-number-field
+              label="Initial value"
+              name="initialValue"
+              inputMode="decimal"
+              prefix="$"
+              suffix="USD"
+              min={0.01}
+              step={0.01}
+              required
+            />
+            <s-text-field
+              label="Note"
+              name="note"
+            />
+            <s-button type="submit" disabled={addGiftCardFetcher.state !== "idle"}>
+              {addGiftCardFetcher.state !== "idle" ? "Adding..." : "Add gift card"}
+            </s-button>
+          </s-stack>
+        </addGiftCardFetcher.Form>
+
+        {addGiftCardData?.error && (
+          <s-text tone="critical">{addGiftCardData.error}</s-text>
+        )}
+        {addGiftCardData?.success && !addGiftCardData.error && (
+          <s-text tone="success">
+            Gift card created successfully ({addGiftCardData.giftCardCode ?? "code hidden"}). Refresh to see it in the list.
+          </s-text>
+        )}
+      </s-section>
+
+      <s-section heading="Import Gift Cards (CSV)">
+        <s-stack gap="small">
+          <s-text color="subdued">
+            Required headers: Gift card code, Initial value, Note
+          </s-text>
+
+          <importGiftCardsFetcher.Form method="post" encType="multipart/form-data">
+            <s-stack gap="small">
+              <input type="hidden" name="intent" value="importGiftCardsCsv" />
+              <label>
+                <s-stack gap="none">
+                  <s-text>CSV file</s-text>
+                  <input
+                    name="csvFile"
+                    type="file"
+                    accept=".csv,text/csv"
+                    required
+                  />
+                </s-stack>
+              </label>
+              <s-button type="submit" disabled={importGiftCardsFetcher.state !== "idle"}>
+                {importGiftCardsFetcher.state !== "idle" ? "Importing..." : "Import gift cards"}
+              </s-button>
+            </s-stack>
+          </importGiftCardsFetcher.Form>
+
+          {importGiftCardsData?.error && (
+            <s-text tone="critical">{importGiftCardsData.error}</s-text>
+          )}
+
+          {importGiftCardsData?.validationErrors && importGiftCardsData.validationErrors.length > 0 && (
+            <s-stack gap="none">
+              {importGiftCardsData.validationErrors.map((errorMessage) => (
+                <s-text key={errorMessage} tone="critical">
+                  {errorMessage}
+                </s-text>
+              ))}
+            </s-stack>
+          )}
+
+          {importGiftCardsData?.success && !importGiftCardsData.error && (
+            <s-text tone="success">
+              Successfully imported {importGiftCardsData.importedCount ?? 0} gift card(s).
+            </s-text>
+          )}
+        </s-stack>
+      </s-section>
+    </s-page>
   );
 }
