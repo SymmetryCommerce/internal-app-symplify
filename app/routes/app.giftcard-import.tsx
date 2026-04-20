@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   useLoaderData,
   useFetcher,
@@ -65,6 +65,143 @@ type GiftCard = {
     amount: string;
     currencyCode: string;
   };
+};
+
+type CsvGiftCardRow = {
+  giftCardCode: string;
+  initialValue: string;
+  note: string;
+};
+
+const REQUIRED_GIFT_CARD_CSV_HEADERS = [
+  "Gift card code",
+  "Initial value",
+  "Note",
+] as const;
+
+const parseCsvContent = (csvContent: string): string[][] => {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < csvContent.length; i++) {
+    const char = csvContent[i];
+    const nextChar = csvContent[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        cell += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      row.push(cell.trim());
+      cell = "";
+      continue;
+    }
+
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") {
+        i++;
+      }
+      row.push(cell.trim());
+      rows.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+
+    cell += char;
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell.trim());
+    rows.push(row);
+  }
+
+  return rows
+    .map((currentRow) => currentRow.map((currentCell) => currentCell.trim()))
+    .filter((currentRow) => currentRow.some((currentCell) => currentCell.length > 0));
+};
+
+const validateGiftCardCsvRows = (
+  csvRows: string[][]
+):
+  | { ok: true; rows: CsvGiftCardRow[] }
+  | { ok: false; error: string; validationErrors?: string[] } => {
+  if (csvRows.length === 0) {
+    return { ok: false, error: "CSV file is empty." };
+  }
+
+  const [headerRow, ...dataRows] = csvRows;
+  const headerMap = new Map<string, number>();
+
+  headerRow.forEach((header, index) => {
+    headerMap.set(header.trim(), index);
+  });
+
+  const missingHeaders = REQUIRED_GIFT_CARD_CSV_HEADERS.filter(
+    (header) => !headerMap.has(header)
+  );
+
+  if (missingHeaders.length > 0) {
+    return {
+      ok: false,
+      error: `CSV is missing required header(s): ${missingHeaders.join(", ")}. Expected headers: ${REQUIRED_GIFT_CARD_CSV_HEADERS.join(", ")}.`,
+    };
+  }
+
+  if (dataRows.length === 0) {
+    return { ok: false, error: "CSV has headers but no gift card rows." };
+  }
+
+  const codeIndex = headerMap.get("Gift card code")!;
+  const valueIndex = headerMap.get("Initial value")!;
+  const noteIndex = headerMap.get("Note")!;
+
+  const rows: CsvGiftCardRow[] = [];
+  const validationErrors: string[] = [];
+
+  dataRows.forEach((row, rowIndex) => {
+    const sheetRowNumber = rowIndex + 2;
+    const giftCardCode = (row[codeIndex] ?? "").trim();
+    const initialValue = (row[valueIndex] ?? "").trim();
+    const note = (row[noteIndex] ?? "").trim();
+
+    if (!giftCardCode) {
+      validationErrors.push(`Row ${sheetRowNumber}: Gift card code is required.`);
+    } else if (giftCardCode.length < 8) {
+      validationErrors.push(
+        `Row ${sheetRowNumber}: Gift card code must be at least 8 characters long.`
+      );
+    }
+
+    const parsedValue = Number(initialValue);
+    if (!initialValue) {
+      validationErrors.push(`Row ${sheetRowNumber}: Initial value is required.`);
+    } else if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+      validationErrors.push(
+        `Row ${sheetRowNumber}: Initial value must be a number greater than 0.`
+      );
+    }
+
+    rows.push({ giftCardCode, initialValue, note });
+  });
+
+  if (validationErrors.length > 0) {
+    return {
+      ok: false,
+      error: "CSV validation failed. Fix the issues listed below and try again.",
+      validationErrors,
+    };
+  }
+
+  return { ok: true, rows };
 };
 
 /* =========================
@@ -177,6 +314,87 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
+
+  /* ------ Import gift cards from CSV ------ */
+  if (intent === "importGiftCardsCsv") {
+    const csvFile = formData.get("csvFile");
+
+    if (!(csvFile instanceof File)) {
+      return {
+        success: false,
+        error:
+          "Please upload a CSV file that includes the headers: Gift card code, Initial value, Note.",
+      };
+    }
+
+    const csvText = await csvFile.text();
+    const parsedRows = parseCsvContent(csvText);
+    const validationResult = validateGiftCardCsvRows(parsedRows);
+
+    if (!validationResult.ok) {
+      return {
+        success: false,
+        error: validationResult.error,
+        validationErrors: validationResult.validationErrors,
+      };
+    }
+
+    const creationErrors: string[] = [];
+    let createdCount = 0;
+
+    for (let i = 0; i < validationResult.rows.length; i++) {
+      const row = validationResult.rows[i];
+      const sheetRowNumber = i + 2;
+
+      const createRes = await admin.graphql(
+        `
+        mutation giftCardCreate($input: GiftCardCreateInput!) {
+          giftCardCreate(input: $input) {
+            giftCard {
+              id
+            }
+            userErrors {
+              message
+              field
+            }
+          }
+        }
+        `,
+        {
+          variables: {
+            input: {
+              code: row.giftCardCode,
+              initialValue: row.initialValue,
+              note: row.note,
+            },
+          },
+        }
+      );
+
+      const createJson = await createRes.json();
+      const userErrors = createJson.data?.giftCardCreate?.userErrors ?? [];
+
+      if (userErrors.length > 0) {
+        creationErrors.push(`Row ${sheetRowNumber}: ${userErrors[0].message}`);
+        continue;
+      }
+
+      createdCount += 1;
+    }
+
+    if (creationErrors.length > 0) {
+      return {
+        success: false,
+        error: `Imported ${createdCount} gift card(s), but ${creationErrors.length} row(s) failed.`,
+        validationErrors: creationErrors,
+      };
+    }
+
+    return {
+      success: true,
+      importedCount: createdCount,
+    };
+  }
 
   /* ------ Create a gift card ------ */
   if (intent === "addGiftCard") {
@@ -782,8 +1000,17 @@ export default function ImportPage() {
   const { blogs = [], metaobjectGroups = [], giftCards = [] } =
     useLoaderData<typeof loader>();
   const addGiftCardFetcher = useFetcher();
+  const importGiftCardsFetcher = useFetcher();
   const addGiftCardData = addGiftCardFetcher.data as
     | { success?: boolean; error?: string; giftCardCode?: string }
+    | undefined;
+  const importGiftCardsData = importGiftCardsFetcher.data as
+    | {
+        success?: boolean;
+        error?: string;
+        importedCount?: number;
+        validationErrors?: string[];
+      }
     | undefined;
 
   return (
@@ -816,12 +1043,10 @@ export default function ImportPage() {
           </s-table>
         )}
       </s-section>
-      
+
       <s-section heading="Add a Gift Card">
         <addGiftCardFetcher.Form method="post">
-          <s-stack
-            gap="base"
-          >
+          <s-stack gap="base">
             <input type="hidden" name="intent" value="addGiftCard" />
             <s-text-field
               label="Gift card code"
@@ -838,7 +1063,7 @@ export default function ImportPage() {
               step={0.01}
               required
             />
-            <s-text-field 
+            <s-text-field
               label="Note"
               name="note"
             />
@@ -856,6 +1081,54 @@ export default function ImportPage() {
             Gift card created successfully ({addGiftCardData.giftCardCode ?? "code hidden"}). Refresh to see it in the list.
           </s-text>
         )}
+      </s-section>
+
+      <s-section heading="Import Gift Cards (CSV)">
+        <s-stack gap="small">
+          <s-text color="subdued">
+            Required headers: Gift card code, Initial value, Note
+          </s-text>
+
+          <importGiftCardsFetcher.Form method="post" encType="multipart/form-data">
+            <s-stack gap="small">
+              <input type="hidden" name="intent" value="importGiftCardsCsv" />
+              <label>
+                <s-stack gap="none">
+                  <s-text>CSV file</s-text>
+                  <input
+                    name="csvFile"
+                    type="file"
+                    accept=".csv,text/csv"
+                    required
+                  />
+                </s-stack>
+              </label>
+              <s-button type="submit" disabled={importGiftCardsFetcher.state !== "idle"}>
+                {importGiftCardsFetcher.state !== "idle" ? "Importing..." : "Import gift cards"}
+              </s-button>
+            </s-stack>
+          </importGiftCardsFetcher.Form>
+
+          {importGiftCardsData?.error && (
+            <s-text tone="critical">{importGiftCardsData.error}</s-text>
+          )}
+
+          {importGiftCardsData?.validationErrors && importGiftCardsData.validationErrors.length > 0 && (
+            <s-stack gap="none">
+              {importGiftCardsData.validationErrors.map((errorMessage) => (
+                <s-text key={errorMessage} tone="critical">
+                  {errorMessage}
+                </s-text>
+              ))}
+            </s-stack>
+          )}
+
+          {importGiftCardsData?.success && !importGiftCardsData.error && (
+            <s-text tone="success">
+              Successfully imported {importGiftCardsData.importedCount ?? 0} gift card(s).
+            </s-text>
+          )}
+        </s-stack>
       </s-section>
     </s-page>
   );

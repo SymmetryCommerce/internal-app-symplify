@@ -358,6 +358,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const resourceParam = requestUrl.searchParams.get("resource");
   const resource: ExportResource = isExportResource(resourceParam) ? resourceParam : "metaobjects";
   const includeFieldValues = requestUrl.searchParams.get("includeFieldValues") === "1";
+  const includeCommandColumn = requestUrl.searchParams.get("includeCommandColumn") === "1";
 
   if (resource === "products") {
     const handles = await fetchAllProductHandles(admin);
@@ -392,7 +393,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   if (resource === "articles") {
     const entries = await fetchAllArticleHandlesWithBlogs(admin);
     const csv = buildHandleCsv(
-      ["blogHandle", "articleHandle"],
+      ["Blog: Handle", "Handle"],
       entries.map((entry) => [entry.blogHandle, entry.handle])
     );
     const filename = `blog-post-handles-export-${new Date().toISOString().slice(0, 10)}.csv`;
@@ -434,24 +435,53 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const fields = entry.fields ?? [];
 
         if (fields.length === 0) {
-          rows.push([entry.handle, definition.type, definition.name, "", ""].map(csvEscape).join(","));
+          rows.push(
+            [
+              entry.handle,
+              definition.type,
+              ...(includeCommandColumn ? ["MERGE"] : []),
+              definition.name,
+              "",
+              "",
+            ]
+              .map(csvEscape)
+              .join(",")
+          );
           continue;
         }
 
         for (const field of fields) {
           rows.push(
-            [entry.handle, definition.type, definition.name, field.key, field.value ?? ""]
+            [
+              entry.handle,
+              definition.type,
+              ...(includeCommandColumn ? ["MERGE"] : []),
+              definition.name,
+              field.key,
+              field.value ?? "",
+            ]
               .map(csvEscape)
               .join(",")
           );
         }
       } else {
-        rows.push([entry.handle, definition.type, definition.name, "", ""].map(csvEscape).join(","));
+        rows.push(
+          [
+            entry.handle,
+            definition.type,
+            ...(includeCommandColumn ? ["MERGE"] : []),
+            definition.name,
+            "",
+            "",
+          ]
+            .map(csvEscape)
+            .join(",")
+        );
       }
     }
   }
 
-  const headerValues = ["handle", "definitionType", "definitionName", "field", "value"];
+  const headerValues = ["Handle", "Definition: Handle", ...(includeCommandColumn ? ["Command"] : []), "Definition: Name", "Field", "Value"];
   const headerRow = headerValues.map(csvEscape).join(",");
 
   const csv = [headerRow, ...rows].join("\n");
