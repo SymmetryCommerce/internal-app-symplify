@@ -1,11 +1,4 @@
-import { useEffect } from "react";
-import type {
-  ActionFunctionArgs,
-  HeadersFunction,
-  LoaderFunctionArgs,
-} from "react-router";
-import { useFetcher } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -15,234 +8,103 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return null;
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
-
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-
-  const variantResponseJson = await variantResponse.json();
-
-  return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-  };
-};
-
 export default function Index() {
-  const fetcher = useFetcher<typeof action>();
-
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
-
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
-
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
-
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
-      </s-button>
-
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references.
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
-            >
-              Edit product
-            </s-button>
-          )}
+    <s-page heading="App Documentation">
+      <s-section heading="What this app is for">
+        <s-stack gap="base">
+          <s-paragraph>
+            This app helps migrate media content to Shopify CDN, import and create gift cards, and export/import handle and metaobject data using CSV.
+          </s-paragraph>
+          <s-paragraph>
+            Use the navigation on the sidebar of the app to open each tool page. Each page below includes what it does, why you would use it, and the typical workflow.
+          </s-paragraph>
         </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-            </s-stack>
-          </s-section>
-        )}
       </s-section>
 
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
+      <s-section heading="Image Migration page">
+        <s-stack gap="small">
+          <s-text>
+            Useful for migrating externally hosted images into Shopify Files and updating content to point at Shopify CDN URLs.
+          </s-text>
+          <s-text>Core features:</s-text>
+          <s-unordered-list>
+            <s-list-item>Scan blog articles, pages, and metaobjects for external image URLs.</s-list-item>
+            <s-list-item>Import a single image URL and replace only that image in content.</s-list-item>
+            <s-list-item>Bulk import all external images for one resource or an entire metaobject group.</s-list-item>
+            <s-list-item>Persist the updated HTML/field values back to Shopify after upload.</s-list-item>
+          </s-unordered-list>
+          <s-text>How to use:</s-text>
+          <s-ordered-list>
+            <s-list-item>Open Image Migration and choose the content section you want to process.</s-list-item>
+            <s-list-item>Review detected external images.</s-list-item>
+            <s-list-item>Run single-image import for targeted fixes, or batch import for full migration.</s-list-item>
+            <s-list-item>Verify success messages and check that URLs now use Shopify CDN.</s-list-item>
+          </s-ordered-list>
+        </s-stack>
       </s-section>
 
-      <s-section slot="aside" heading="Next steps">
+      <s-section heading="Gift Card Import page">
+        <s-stack gap="small">
+          <s-text>
+            Useful for managing gift cards quickly: review existing cards, create one manually, or create many from CSV.
+          </s-text>
+          <s-text>Core features:</s-text>
+          <s-unordered-list>
+            <s-list-item>View recently fetched gift cards with masked code, amount, and created date.</s-list-item>
+            <s-list-item>Create one gift card manually with code, initial value, and note.</s-list-item>
+            <s-list-item>Bulk create gift cards from CSV with validation and row-level error feedback.</s-list-item>
+          </s-unordered-list>
+          <s-text>CSV requirements:</s-text>
+          <s-unordered-list>
+            <s-list-item>Gift card code</s-list-item>
+            <s-list-item>Initial value</s-list-item>
+            <s-list-item>Note</s-list-item>
+          </s-unordered-list>
+          <s-text>How to use:</s-text>
+          <s-ordered-list>
+            <s-list-item>Prepare CSV with the required headers and valid values.</s-list-item>
+            <s-list-item>Upload CSV in the Import Gift Cards section and submit.</s-list-item>
+            <s-list-item>Review import summary and row errors, then fix and retry if needed.</s-list-item>
+          </s-ordered-list>
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Import or Export page">
+        <s-stack gap="small">
+          <s-text>
+            Useful for moving catalog and metaobject handle data between systems and running controlled metaobject CSV imports.
+          </s-text>
+          <s-text>Core features:</s-text>
+          <s-unordered-list>
+            <s-list-item>Export product, collection, article, and page handles to CSV.</s-list-item>
+            <s-list-item>Export metaobjects to CSV with optional field values and import command column.</s-list-item>
+            <s-list-item>Import metaobjects via CSV using commands: NEW, MERGE, UPDATE, REPLACE, DELETE, IGNORE.</s-list-item>
+            <s-list-item>Get import totals and download error logs for failed rows.</s-list-item>
+          </s-unordered-list>
+          <s-text>How to use:</s-text>
+          <s-ordered-list>
+            <s-list-item>Use export first to generate a template and understand expected structure.</s-list-item>
+            <s-list-item>Edit CSV with desired command behavior per handle.</s-list-item>
+            <s-list-item>Upload CSV in Metaobject Import and run import.</s-list-item>
+            <s-list-item>Download error log CSV if any rows fail, then correct and rerun.</s-list-item>
+          </s-ordered-list>
+        </s-stack>
+      </s-section>
+
+      <s-section slot="aside" heading="Quick start">
+        <s-ordered-list>
+          <s-list-item>Start with Import or Export to generate reference CSV files.</s-list-item>
+          <s-list-item>Use Image Migration to convert external image URLs to Shopify-hosted assets.</s-list-item>
+          <s-list-item>Use Gift Card Import when launching or replenishing gift card batches.</s-list-item>
+        </s-ordered-list>
+      </s-section>
+
+      <s-section slot="aside" heading="Notes">
         <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
+          <s-list-item>Large imports and migrations can take time; wait for completion messages.</s-list-item>
+          <s-list-item>Prefer testing CSV changes with small batches before full runs.</s-list-item>
+          <s-list-item>Keep a backup export before running REPLACE or DELETE commands.</s-list-item>
         </s-unordered-list>
       </s-section>
     </s-page>
