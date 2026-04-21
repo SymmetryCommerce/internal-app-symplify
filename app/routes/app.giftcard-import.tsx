@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useEffect, useState } from "react";
 import {
   useLoaderData,
   useFetcher,
@@ -1001,6 +1001,9 @@ export default function ImportPage() {
     useLoaderData<typeof loader>();
   const addGiftCardFetcher = useFetcher();
   const importGiftCardsFetcher = useFetcher();
+  const dropZoneRef = useRef<any>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  
   const addGiftCardData = addGiftCardFetcher.data as
     | { success?: boolean; error?: string; giftCardCode?: string }
     | undefined;
@@ -1012,6 +1015,20 @@ export default function ImportPage() {
         validationErrors?: string[];
       }
     | undefined;
+
+  useEffect(() => {
+    const dropZone = dropZoneRef.current;
+    if (!dropZone) return;
+
+    const handleChange = () => {
+      if (dropZone.files && dropZone.files.length > 0) {
+        setSelectedFileName(dropZone.files[0].name);
+      }
+    };
+
+    dropZone.addEventListener("change", handleChange);
+    return () => dropZone.removeEventListener("change", handleChange);
+  }, []);
 
   return (
     <s-page heading="Gift Card Import">
@@ -1092,17 +1109,13 @@ export default function ImportPage() {
           <importGiftCardsFetcher.Form method="post" encType="multipart/form-data">
             <s-stack gap="small">
               <input type="hidden" name="intent" value="importGiftCardsCsv" />
-              <label>
-                <s-stack gap="none">
-                  <s-text>CSV file</s-text>
-                  <input
-                    name="csvFile"
-                    type="file"
-                    accept=".csv,text/csv"
-                    required
-                  />
-                </s-stack>
-              </label>
+              <s-drop-zone
+                ref={dropZoneRef}
+                name="csvFile"
+                label={selectedFileName ? `✓ ${selectedFileName}` : "Drag CSV file here or click to upload"}
+                accept=".csv,text/csv"
+                required
+              />
               <s-button type="submit" disabled={importGiftCardsFetcher.state !== "idle"}>
                 {importGiftCardsFetcher.state !== "idle" ? "Importing..." : "Import gift cards"}
               </s-button>
