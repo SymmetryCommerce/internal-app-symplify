@@ -25,23 +25,6 @@ export type BlogEdge = {
   node: BlogNode;
 };
 
-export type PageNode = {
-  id: string;
-  title: string;
-  handle: string;
-  body?: string;
-};
-
-export type PageEdge = {
-  node: PageNode;
-};
-
-export type ImgInfo = {
-  src: string;
-  alt: string;
-  index: number;
-};
-
 export type MetaobjectField = {
   key: string;
   value: string | null;
@@ -60,8 +43,18 @@ export type MetaobjectGroup = {
   entries: MetaobjectEntry[];
 };
 
-export type ArticleImageAltEditorProps = {
-  article: ArticleNode;
-  isArticleOpen: boolean;
-  onToggleArticle: () => void;
+export type GiftCard = {
+  id: string;
+  lastCharacters: string | null;
+  createdAt: string;
+  balance: {
+    amount: string;
+    currencyCode: string;
+  };
+};
+
+export type CsvGiftCardRow = {
+  giftCardCode: string;
+  initialValue: string;
+  note: string;
 };

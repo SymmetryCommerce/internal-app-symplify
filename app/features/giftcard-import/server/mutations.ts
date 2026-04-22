@@ -1,0 +1,703 @@
+import { parseCsvContent } from "app/shared/utils";
+import { validateGiftCardCsvRows } from "../utils";
+
+export const handleGiftCardAction = async (admin: any, formData: FormData) => {
+  const intent = formData.get("intent") as string;
+
+  /* ------ Import gift cards from CSV ------ */
+  if (intent === "importGiftCardsCsv") {
+    const csvFile = formData.get("csvFile");
+
+    if (!(csvFile instanceof File)) {
+      return {
+        success: false,
+        error:
+          "Please upload a CSV file that includes the headers: Gift card code, Initial value, Note.",
+      };
+    }
+
+    const csvText = await csvFile.text();
+    const parsedRows = parseCsvContent(csvText);
+    const validationResult = validateGiftCardCsvRows(parsedRows);
+
+    if (!validationResult.ok) {
+      return {
+        success: false,
+        error: validationResult.error,
+        validationErrors: validationResult.validationErrors,
+      };
+    }
+
+    const creationErrors: string[] = [];
+    let createdCount = 0;
+
+    for (let i = 0; i < validationResult.rows.length; i++) {
+      const row = validationResult.rows[i];
+      const sheetRowNumber = i + 2;
+
+      const createRes = await admin.graphql(
+        `
+        mutation giftCardCreate($input: GiftCardCreateInput!) {
+          giftCardCreate(input: $input) {
+            giftCard {
+              id
+            }
+            userErrors {
+              message
+              field
+            }
+          }
+        }
+        `,
+        {
+          variables: {
+            input: {
+              code: row.giftCardCode,
+              initialValue: row.initialValue,
+              note: row.note,
+            },
+          },
+        }
+      );
+
+      const createJson = await createRes.json();
+      const userErrors = createJson.data?.giftCardCreate?.userErrors ?? [];
+
+      if (userErrors.length > 0) {
+        creationErrors.push(`Row ${sheetRowNumber}: ${userErrors[0].message}`);
+        continue;
+      }
+
+      createdCount += 1;
+    }
+
+    if (creationErrors.length > 0) {
+      return {
+        success: false,
+        error: `Imported ${createdCount} gift card(s), but ${creationErrors.length} row(s) failed.`,
+        validationErrors: creationErrors,
+      };
+    }
+
+    return {
+      success: true,
+      importedCount: createdCount,
+    };
+  }
+
+  /* ------ Create a gift card ------ */
+  if (intent === "addGiftCard") {
+    const giftCardCode = formData.get("giftCardCode") as string;
+    const initialValue = formData.get("initialValue") as string;
+    const note = formData.get("note") as string;
+
+    const createRes = await admin.graphql(
+      `
+      mutation giftCardCreate($input: GiftCardCreateInput!) {
+        giftCardCreate(input: $input) {
+          giftCard {
+            id
+            initialValue {
+              amount
+            }
+          }
+          giftCardCode
+          userErrors {
+            message
+            field
+          }
+        }
+      }
+      `,
+      {
+        variables: {
+          input: {
+            code: giftCardCode,
+            initialValue,
+            note,
+          },
+        },
+      }
+    );
+
+    const createJson = await createRes.json();
+    const createErrors = createJson.data.giftCardCreate.userErrors;
+
+    if (createErrors?.length) {
+      return {
+        success: false,
+        error: createErrors[0].message,
+      };
+    }
+
+    return {
+      success: true,
+      giftCardCode: createJson.data.giftCardCreate.giftCardCode,
+      giftCard: createJson.data.giftCardCreate.giftCard,
+    };
+  }
+
+  /* ------ Import an external image to Shopify CDN ------ */
+  if (intent === "importImage") {
+    return handleImportImage(admin, formData);
+  }
+
+  /* ------ Import an external image for a metaobject field ------ */
+  if (intent === "importMetaobjectImage") {
+    return handleImportMetaobjectImage(admin, formData);
+  }
+
+  /* ------ Import ALL external image fields for a metaobject entry ------ */
+  if (intent === "importAllMetaobjectImages") {
+    return handleImportAllMetaobjectImages(admin, formData);
+  }
+
+  /* ------ Import ALL external images across every entry of a group ------ */
+  if (intent === "importAllGroupImages") {
+    return handleImportAllGroupImages(admin, formData);
+  }
+
+  /* ------ Default: save article body ------ */
+  return handleUpdateArticleBody(admin, formData);
+};
+
+// Helper mutations
+async function handleImportImage(admin: any, formData: FormData) {
+  const imgSrc = formData.get("imgSrc") as string;
+  const articleId = formData.get("articleId") as string;
+  const imgIndex = parseInt(formData.get("imgIndex") as string, 10);
+  const body = formData.get("body") as string;
+
+  try {
+    // 1. Fetch the external image
+    const imageRes = await fetch(imgSrc);
+    if (!imageRes.ok)
+      throw new Error(`Failed to fetch image: ${imageRes.statusText}`);
+    const imageBuffer = await imageRes.arrayBuffer();
+    const mimeType =
+      imageRes.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+    const fileSize = imageBuffer.byteLength.toString();
+    const filename =
+      decodeURIComponent(
+        imgSrc.split("/").pop()?.split("?")[0] ?? "image.jpg"
+      ) || "image.jpg";
+
+    // 2. Create a staged upload target
+    const stagedRes = await admin.graphql(
+      `
+      mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+        stagedUploadsCreate(input: $input) {
+          stagedTargets {
+            url
+            resourceUrl
+            parameters { name value }
+          }
+          userErrors { field message }
+        }
+      }
+      `,
+      {
+        variables: {
+          input: [
+            { filename, mimeType, resource: "FILE", fileSize, httpMethod: "PUT" },
+          ],
+        },
+      }
+    );
+    const stagedJson = await stagedRes.json();
+    const stagedErrors =
+      stagedJson.data.stagedUploadsCreate.userErrors;
+    if (stagedErrors?.length) throw new Error(stagedErrors[0].message);
+    const target = stagedJson.data.stagedUploadsCreate.stagedTargets[0];
+
+    // 3. PUT the image bytes to the staged URL
+    const uploadRes = await fetch(target.url, {
+      method: "PUT",
+      body: imageBuffer,
+      headers: { "Content-Type": mimeType, "Content-Length": fileSize },
+    });
+    if (!uploadRes.ok)
+      throw new Error(`Upload failed: ${uploadRes.statusText}`);
+
+    // 4. Register the file in Shopify Files
+    const fileCreateRes = await admin.graphql(
+      `
+      mutation fileCreate($files: [FileCreateInput!]!) {
+        fileCreate(files: $files) {
+          files {
+            id
+            fileStatus
+            ... on MediaImage { image { url } }
+            ... on GenericFile { url }
+          }
+          userErrors { field message }
+        }
+      }
+      `,
+      {
+        variables: {
+          files: [{ originalSource: target.resourceUrl, contentType: "IMAGE" }],
+        },
+      }
+    );
+    const fileJson = await fileCreateRes.json();
+    const fileErrors = fileJson.data.fileCreate.userErrors;
+    if (fileErrors?.length) throw new Error(fileErrors[0].message);
+
+    const createdFileId: string = fileJson.data.fileCreate.files[0]?.id;
+    if (!createdFileId) throw new Error("No file ID returned from fileCreate");
+
+    // 5. Poll until Shopify finishes processing and exposes the real CDN URL
+    let newUrl: string | null = null;
+    const maxAttempts = 15;
+    const delayMs = 1500;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise((r) => setTimeout(r, delayMs));
+
+      const pollRes = await admin.graphql(
+        `
+        query getFile($id: ID!) {
+          node(id: $id) {
+            ... on MediaImage {
+              fileStatus
+              image { url }
+            }
+            ... on GenericFile {
+              fileStatus
+              url
+            }
+          }
+        }
+        `,
+        { variables: { id: createdFileId } }
+      );
+      const pollJson = await pollRes.json();
+      const node = pollJson.data?.node;
+      const status: string = node?.fileStatus ?? "";
+      const candidateUrl: string = node?.image?.url ?? node?.url ?? "";
+
+      if (
+        status === "READY" &&
+        candidateUrl.startsWith("https://cdn.shopify.com")
+      ) {
+        newUrl = candidateUrl;
+        break;
+      }
+
+      if (status === "FAILED") throw new Error("Shopify file processing failed");
+    }
+
+    if (!newUrl) throw new Error("Timed out waiting for Shopify CDN URL");
+
+    // 6. Swap old src → new CDN URL in the article HTML
+    const updatedBody = body.split(imgSrc).join(newUrl);
+
+    // 7. Persist the updated HTML back to the article
+    const updateRes = await admin.graphql(
+      `
+      mutation articleUpdate($id: ID!, $article: ArticleUpdateInput!) {
+        articleUpdate(id: $id, article: $article) {
+          article { id body }
+          userErrors { field message }
+        }
+      }
+      `,
+      { variables: { id: articleId, article: { body: updatedBody } } }
+    );
+    const updateJson = await updateRes.json();
+    const updateErrors = updateJson.data.articleUpdate.userErrors;
+    if (updateErrors?.length) throw new Error(updateErrors[0].message);
+
+    return { success: true, newUrl, imgIndex, updatedBody };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return { success: false, error: message };
+  }
+}
+
+async function handleImportMetaobjectImage(admin: any, formData: FormData) {
+  const imgSrc = formData.get("imgSrc") as string;
+  const metaobjectId = formData.get("metaobjectId") as string;
+  const fieldKey = formData.get("fieldKey") as string;
+
+  try {
+    const imageRes = await fetch(imgSrc);
+    if (!imageRes.ok)
+      throw new Error(`Failed to fetch image: ${imageRes.statusText}`);
+    const imageBuffer = await imageRes.arrayBuffer();
+    const mimeType =
+      imageRes.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+    const fileSize = imageBuffer.byteLength.toString();
+    const filename =
+      decodeURIComponent(
+        imgSrc.split("/").pop()?.split("?")[0] ?? "image.jpg"
+      ) || "image.jpg";
+
+    const stagedRes = await admin.graphql(
+      `
+      mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+        stagedUploadsCreate(input: $input) {
+          stagedTargets {
+            url
+            resourceUrl
+            parameters { name value }
+          }
+          userErrors { field message }
+        }
+      }
+      `,
+      {
+        variables: {
+          input: [
+            { filename, mimeType, resource: "FILE", fileSize, httpMethod: "PUT" },
+          ],
+        },
+      }
+    );
+    const stagedJson = await stagedRes.json();
+    const stagedErrors = stagedJson.data.stagedUploadsCreate.userErrors;
+    if (stagedErrors?.length) throw new Error(stagedErrors[0].message);
+    const target = stagedJson.data.stagedUploadsCreate.stagedTargets[0];
+
+    const uploadRes = await fetch(target.url, {
+      method: "PUT",
+      body: imageBuffer,
+      headers: { "Content-Type": mimeType, "Content-Length": fileSize },
+    });
+    if (!uploadRes.ok)
+      throw new Error(`Upload failed: ${uploadRes.statusText}`);
+
+    const fileCreateRes = await admin.graphql(
+      `
+      mutation fileCreate($files: [FileCreateInput!]!) {
+        fileCreate(files: $files) {
+          files {
+            id
+            fileStatus
+            ... on MediaImage { image { url } }
+            ... on GenericFile { url }
+          }
+          userErrors { field message }
+        }
+      }
+      `,
+      {
+        variables: {
+          files: [{ originalSource: target.resourceUrl, contentType: "IMAGE" }],
+        },
+      }
+    );
+    const fileJson = await fileCreateRes.json();
+    const fileErrors = fileJson.data.fileCreate.userErrors;
+    if (fileErrors?.length) throw new Error(fileErrors[0].message);
+
+    const createdFileId: string = fileJson.data.fileCreate.files[0]?.id;
+    if (!createdFileId) throw new Error("No file ID returned from fileCreate");
+
+    let newUrl: string | null = null;
+    const maxAttempts = 15;
+    const delayMs = 1500;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise((r) => setTimeout(r, delayMs));
+      const pollRes = await admin.graphql(
+        `
+        query getFile($id: ID!) {
+          node(id: $id) {
+            ... on MediaImage { fileStatus image { url } }
+            ... on GenericFile { fileStatus url }
+          }
+        }
+        `,
+        { variables: { id: createdFileId } }
+      );
+      const pollJson = await pollRes.json();
+      const node = pollJson.data?.node;
+      const status: string = node?.fileStatus ?? "";
+      const candidateUrl: string = node?.image?.url ?? node?.url ?? "";
+      if (status === "READY" && candidateUrl.startsWith("https://cdn.shopify.com")) {
+        newUrl = candidateUrl;
+        break;
+      }
+      if (status === "FAILED") throw new Error("Shopify file processing failed");
+    }
+
+    if (!newUrl) throw new Error("Timed out waiting for Shopify CDN URL");
+
+    // Update the metaobject field to the new CDN URL
+    const updateRes = await admin.graphql(
+      `
+      mutation metaobjectUpdate($id: ID!, $metaobject: MetaobjectUpdateInput!) {
+        metaobjectUpdate(id: $id, metaobject: $metaobject) {
+          metaobject { id handle }
+          userErrors { field message }
+        }
+      }
+      `,
+      {
+        variables: {
+          id: metaobjectId,
+          metaobject: { fields: [{ key: fieldKey, value: newUrl }] },
+        },
+      }
+    );
+    const updateJson = await updateRes.json();
+    const updateErrors = updateJson.data.metaobjectUpdate.userErrors;
+    if (updateErrors?.length) throw new Error(updateErrors[0].message);
+
+    return { success: true, newUrl, fieldKey, metaobjectId };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return { success: false, error: message };
+  }
+}
+
+async function handleImportAllMetaobjectImages(admin: any, formData: FormData) {
+  const metaobjectId = formData.get("metaobjectId") as string;
+  const fieldsJson = formData.get("fields") as string;
+  const imageFields: { key: string; value: string }[] = JSON.parse(fieldsJson);
+
+  const updatedFields: { key: string; newUrl: string }[] = [];
+  const errors: string[] = [];
+
+  for (const { key, value: imgSrc } of imageFields) {
+    try {
+      const imageRes = await fetch(imgSrc);
+      if (!imageRes.ok) throw new Error(`Failed to fetch image: ${imageRes.statusText}`);
+      const imageBuffer = await imageRes.arrayBuffer();
+      const mimeType = imageRes.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+      const fileSize = imageBuffer.byteLength.toString();
+      const filename =
+        decodeURIComponent(imgSrc.split("/").pop()?.split("?")[0] ?? "image.jpg") || "image.jpg";
+
+      const stagedRes = await admin.graphql(
+        `mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+          stagedUploadsCreate(input: $input) {
+            stagedTargets { url resourceUrl parameters { name value } }
+            userErrors { field message }
+          }
+        }`,
+        { variables: { input: [{ filename, mimeType, resource: "FILE", fileSize, httpMethod: "PUT" }] } }
+      );
+      const stagedJson = await stagedRes.json();
+      const stagedErrors = stagedJson.data.stagedUploadsCreate.userErrors;
+      if (stagedErrors?.length) throw new Error(stagedErrors[0].message);
+      const target = stagedJson.data.stagedUploadsCreate.stagedTargets[0];
+
+      const uploadRes = await fetch(target.url, {
+        method: "PUT",
+        body: imageBuffer,
+        headers: { "Content-Type": mimeType, "Content-Length": fileSize },
+      });
+      if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`);
+
+      const fileCreateRes = await admin.graphql(
+        `mutation fileCreate($files: [FileCreateInput!]!) {
+          fileCreate(files: $files) {
+            files { id fileStatus ... on MediaImage { image { url } } ... on GenericFile { url } }
+            userErrors { field message }
+          }
+        }`,
+        { variables: { files: [{ originalSource: target.resourceUrl, contentType: "IMAGE" }] } }
+      );
+      const fileJson = await fileCreateRes.json();
+      const fileErrors = fileJson.data.fileCreate.userErrors;
+      if (fileErrors?.length) throw new Error(fileErrors[0].message);
+
+      const createdFileId: string = fileJson.data.fileCreate.files[0]?.id;
+      if (!createdFileId) throw new Error("No file ID returned from fileCreate");
+
+      let newUrl: string | null = null;
+      for (let attempt = 0; attempt < 15; attempt++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const pollRes = await admin.graphql(
+          `query getFile($id: ID!) { node(id: $id) {
+            ... on MediaImage { fileStatus image { url } }
+            ... on GenericFile { fileStatus url }
+          }}`,
+          { variables: { id: createdFileId } }
+        );
+        const pollJson = await pollRes.json();
+        const node = pollJson.data?.node;
+        const status: string = node?.fileStatus ?? "";
+        const candidateUrl: string = node?.image?.url ?? node?.url ?? "";
+        if (status === "READY" && candidateUrl.startsWith("https://cdn.shopify.com")) {
+          newUrl = candidateUrl;
+          break;
+        }
+        if (status === "FAILED") throw new Error("Shopify file processing failed");
+      }
+      if (!newUrl) throw new Error("Timed out waiting for Shopify CDN URL");
+
+      updatedFields.push({ key, newUrl });
+    } catch (err: unknown) {
+      errors.push(`${key}: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+  }
+
+  if (updatedFields.length > 0) {
+    const updateRes = await admin.graphql(
+      `mutation metaobjectUpdate($id: ID!, $metaobject: MetaobjectUpdateInput!) {
+        metaobjectUpdate(id: $id, metaobject: $metaobject) {
+          metaobject { id handle }
+          userErrors { field message }
+        }
+      }`,
+      {
+        variables: {
+          id: metaobjectId,
+          metaobject: { fields: updatedFields.map(({ key, newUrl }) => ({ key, value: newUrl })) },
+        },
+      }
+    );
+    const updateJson = await updateRes.json();
+    const updateErrors = updateJson.data.metaobjectUpdate.userErrors;
+    if (updateErrors?.length) errors.push(updateErrors[0].message);
+  }
+
+  return {
+    success: errors.length === 0,
+    updatedFields,
+    metaobjectId,
+    errors: errors.length > 0 ? errors : undefined,
+  };
+}
+
+async function handleImportAllGroupImages(admin: any, formData: FormData) {
+  const entriesJson = formData.get("entries") as string;
+  const entries: { metaobjectId: string; fields: { key: string; value: string }[] }[] =
+    JSON.parse(entriesJson);
+
+  const updatedEntries: { metaobjectId: string; updatedFields: { key: string; newUrl: string }[] }[] = [];
+  const errors: string[] = [];
+
+  for (const { metaobjectId, fields: imageFields } of entries) {
+    const updatedFields: { key: string; newUrl: string }[] = [];
+
+    for (const { key, value: imgSrc } of imageFields) {
+      try {
+        const imageRes = await fetch(imgSrc);
+        if (!imageRes.ok) throw new Error(`Failed to fetch image: ${imageRes.statusText}`);
+        const imageBuffer = await imageRes.arrayBuffer();
+        const mimeType = imageRes.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+        const fileSize = imageBuffer.byteLength.toString();
+        const filename =
+          decodeURIComponent(imgSrc.split("/").pop()?.split("?")[0] ?? "image.jpg") || "image.jpg";
+
+        const stagedRes = await admin.graphql(
+          `mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+            stagedUploadsCreate(input: $input) {
+              stagedTargets { url resourceUrl parameters { name value } }
+              userErrors { field message }
+            }
+          }`,
+          { variables: { input: [{ filename, mimeType, resource: "FILE", fileSize, httpMethod: "PUT" }] } }
+        );
+        const stagedJson = await stagedRes.json();
+        const stagedErrors = stagedJson.data.stagedUploadsCreate.userErrors;
+        if (stagedErrors?.length) throw new Error(stagedErrors[0].message);
+        const target = stagedJson.data.stagedUploadsCreate.stagedTargets[0];
+
+        const uploadRes = await fetch(target.url, {
+          method: "PUT",
+          body: imageBuffer,
+          headers: { "Content-Type": mimeType, "Content-Length": fileSize },
+        });
+        if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`);
+
+        const fileCreateRes = await admin.graphql(
+          `mutation fileCreate($files: [FileCreateInput!]!) {
+            fileCreate(files: $files) {
+              files { id fileStatus ... on MediaImage { image { url } } ... on GenericFile { url } }
+              userErrors { field message }
+            }
+          }`,
+          { variables: { files: [{ originalSource: target.resourceUrl, contentType: "IMAGE" }] } }
+        );
+        const fileJson = await fileCreateRes.json();
+        const fileErrors = fileJson.data.fileCreate.userErrors;
+        if (fileErrors?.length) throw new Error(fileErrors[0].message);
+
+        const createdFileId: string = fileJson.data.fileCreate.files[0]?.id;
+        if (!createdFileId) throw new Error("No file ID returned from fileCreate");
+
+        let newUrl: string | null = null;
+        for (let attempt = 0; attempt < 15; attempt++) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const pollRes = await admin.graphql(
+            `query getFile($id: ID!) { node(id: $id) {
+              ... on MediaImage { fileStatus image { url } }
+              ... on GenericFile { fileStatus url }
+            }}`,
+            { variables: { id: createdFileId } }
+          );
+          const pollJson = await pollRes.json();
+          const node = pollJson.data?.node;
+          const status: string = node?.fileStatus ?? "";
+          const candidateUrl: string = node?.image?.url ?? node?.url ?? "";
+          if (status === "READY" && candidateUrl.startsWith("https://cdn.shopify.com")) {
+            newUrl = candidateUrl;
+            break;
+          }
+          if (status === "FAILED") throw new Error("Shopify file processing failed");
+        }
+        if (!newUrl) throw new Error("Timed out waiting for Shopify CDN URL");
+
+        updatedFields.push({ key, newUrl });
+      } catch (err: unknown) {
+        errors.push(`${metaobjectId}/${key}: ${err instanceof Error ? err.message : "Unknown error"}`);
+      }
+    }
+
+    if (updatedFields.length > 0) {
+      const updateRes = await admin.graphql(
+        `mutation metaobjectUpdate($id: ID!, $metaobject: MetaobjectUpdateInput!) {
+          metaobjectUpdate(id: $id, metaobject: $metaobject) {
+            metaobject { id handle }
+            userErrors { field message }
+          }
+        }`,
+        {
+          variables: {
+            id: metaobjectId,
+            metaobject: { fields: updatedFields.map(({ key, newUrl }) => ({ key, value: newUrl })) },
+          },
+        }
+      );
+      const updateJson = await updateRes.json();
+      const updateErrors = updateJson.data.metaobjectUpdate.userErrors;
+      if (updateErrors?.length) errors.push(updateErrors[0].message);
+      updatedEntries.push({ metaobjectId, updatedFields });
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    updatedEntries,
+    errors: errors.length > 0 ? errors : undefined,
+  };
+}
+
+async function handleUpdateArticleBody(admin: any, formData: FormData) {
+  const articleId = formData.get("articleId") as string;
+  const body = formData.get("body") as string;
+
+  const response = await admin.graphql(
+    `
+    mutation articleUpdate($id: ID!, $article: ArticleUpdateInput!) {
+      articleUpdate(id: $id, article: $article) {
+        article { id body }
+        userErrors { field message }
+      }
+    }
+    `,
+    {
+      variables: { id: articleId, article: { body } },
+    }
+  );
+
+  const json = await response.json();
+  console.log("Mutation response:", json);
+  return json;
+}
