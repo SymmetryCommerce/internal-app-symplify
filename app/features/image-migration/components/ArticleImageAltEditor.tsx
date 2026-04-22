@@ -1,7 +1,13 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useFetcher } from "react-router";
 import { ArticleImageAltEditorProps, ImgInfo } from "../types";
-import { extractImagesFromHtml } from "../utils";
+import {
+  extractImagesFromHtml,
+  isShopifyCdn,
+  countMissingAlt,
+  updateImageAlt,
+} from "../utils";
+import { stripHtml } from "app/shared";
 
 export function ArticleImageAltEditor({
   article,
@@ -81,12 +87,7 @@ export function ArticleImageAltEditor({
   }, [saveFetcher.state, savingIndex]);
 
   function updateAlt(index: number, newAlt: string) {
-    const doc = new DOMParser().parseFromString(modifiedHtml, "text/html");
-    const imgs = Array.from(doc.getElementsByTagName("img"));
-    if (!imgs[index]) return;
-
-    imgs[index].setAttribute("alt", newAlt);
-    setModifiedHtml(doc.body.innerHTML);
+    setModifiedHtml(updateImageAlt(modifiedHtml, index, newAlt));
   }
 
   function saveAltToShopify(index: number) {
@@ -122,18 +123,8 @@ export function ArticleImageAltEditor({
     );
   }
 
-  const missingAltCount = images.filter(
-    (i) => !i.alt || i.alt.trim() === ""
-  ).length;
-
-  const isShopifyCdn = (src: string) => src.includes("cdn.shopify.com");
+  const missingAltCount = countMissingAlt(images);
   const isImporting = importFetcher.state !== "idle";
-
-  function stripHtml(html: any) {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    return doc.body.innerText || '';
-  }
-
   const summaryText = stripHtml(article.summary);
 
   return (

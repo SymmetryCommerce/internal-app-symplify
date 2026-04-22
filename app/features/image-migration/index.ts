@@ -1,6 +1,20 @@
 // Components
+export { 
+    ArticleImageAltEditor,
+    MetaobjectEntryView,
+    MetaobjectGroupView,
+    MetaobjectFieldRow,
+    PageImageMigrationEditor,
+    BlogsSection,
+    MetaobjectsSection,
+    PagesSection
+ } from "./components";
 
 // Hooks
+export {
+    useImageMigrationUI,
+    usePageBatchImport
+} from "./hooks";
 
 // Types
 export type {
@@ -21,11 +35,29 @@ export type {
 // Constants
 export {
     IMG_TAG_REGEX,
+    IMAGE_EXTENSIONS
 } from "./constants";
 
 // Utils (feature-specific)
 export { 
-    extractImagesFromHtml
+    extractImagesFromHtml,
+    isShopifyCdn,
+    countMissingAlt,
+    updateImageAlt,
+    replaceImgSrcByIndex,
+    isExternalImageUrl
 } from "./utils";
 
 // Server (mutations, queries, loaders)
+export {
+    loadImageMigrationData,
+    uploadExternalImageToShopifyCdn,
+    importArticleImage,
+    importPageImage,
+    importAllPageImages,
+    importMetaobjectImage,
+    importAllMetaobjectImages,
+    importAllGroupImages,
+    updateArticleBody,
+    updatePageBody,
+} from "./server";
