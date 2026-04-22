@@ -1,0 +1,1 @@
+export const IMG_TAG_REGEX = /<img\b[^>]*>/gi;

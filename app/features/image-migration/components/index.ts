@@ -1,0 +1,1 @@
+export { ArticleImageAltEditor } from "./ArticleImageAltEditor";
