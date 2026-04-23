@@ -21,6 +21,7 @@ import {
   useImageMigrationUI,
   usePageBatchImport,
 } from "app/features/image-migration";
+import { CollapsibleFeatureInfo } from "app/shared";
 
 
 
@@ -160,6 +161,27 @@ export default function ImageMigration() {
 
   return (
     <s-page heading="Image Migration">
+      <CollapsibleFeatureInfo
+        slot="aside"
+        title="Image Migration page"
+        summary="Useful for migrating externally hosted images into Shopify Files and updating content to point at Shopify CDN URLs."
+      >
+        <s-text>Core features:</s-text>
+        <s-unordered-list>
+          <s-list-item>Scan blog articles, pages, and metaobjects for external image URLs.</s-list-item>
+          <s-list-item>Import a single image URL and replace only that image in content.</s-list-item>
+          <s-list-item>Bulk import all external images for one resource or an entire metaobject group.</s-list-item>
+          <s-list-item>Persist the updated HTML/field values back to Shopify after upload.</s-list-item>
+        </s-unordered-list>
+        <s-text>How to use:</s-text>
+        <s-ordered-list>
+          <s-list-item>Open Image Migration and choose the content section you want to process.</s-list-item>
+          <s-list-item>Review detected external images.</s-list-item>
+          <s-list-item>Run single-image import for targeted fixes, or batch import for full migration.</s-list-item>
+          <s-list-item>Verify success messages and check that URLs now use Shopify CDN.</s-list-item>
+        </s-ordered-list>
+      </CollapsibleFeatureInfo>
+
       <BlogsSection
         blogs={blogs}
         openBlogIds={openBlogIds}

@@ -15,6 +15,7 @@ import {
 } from "../features/import-export-metaobjects";
 import { parseCsvContent } from "app/shared/utils/csvParser";
 import { useState } from "react";
+import { CollapsibleFeatureInfo } from "app/shared";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   // Handle export downloads
@@ -106,6 +107,27 @@ export default function MetaobjectImportExportPage() {
 
   return (
     <s-page heading="Metaobject Import and Export">
+      <CollapsibleFeatureInfo
+        slot="aside"
+        title="Import or Export page"
+        summary="Useful for moving catalog and metaobject handle data between systems and running controlled metaobject CSV imports."
+      >
+        <s-text>Core features:</s-text>
+        <s-unordered-list>
+          <s-list-item>Export product, collection, article, and page handles to CSV.</s-list-item>
+          <s-list-item>Export metaobjects to CSV with optional field values and import command column.</s-list-item>
+          <s-list-item>Import metaobjects via CSV using commands: NEW, MERGE, UPDATE, REPLACE, DELETE, IGNORE.</s-list-item>
+          <s-list-item>Get import totals and download error logs for failed rows.</s-list-item>
+        </s-unordered-list>
+        <s-text>How to use:</s-text>
+        <s-ordered-list>
+          <s-list-item>Use export first to generate a template and understand expected structure.</s-list-item>
+          <s-list-item>Edit CSV with desired command behavior per handle.</s-list-item>
+          <s-list-item>Upload CSV in Metaobject Import and run import.</s-list-item>
+          <s-list-item>Download error log CSV if any rows fail, then correct and rerun.</s-list-item>
+        </s-ordered-list>
+      </CollapsibleFeatureInfo>
+
       <HandleExportSection
         handleExport={handleExport}
         activeExport={activeExport}
