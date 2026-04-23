@@ -94,9 +94,9 @@ export default function Index() {
 
       <s-section slot="aside" heading="Quick start">
         <s-ordered-list>
-          <s-list-item>Start with Import or Export to generate reference CSV files.</s-list-item>
-          <s-list-item>Use Image Migration to convert external image URLs to Shopify-hosted assets.</s-list-item>
-          <s-list-item>Use Gift Card Import when launching or replenishing gift card batches.</s-list-item>
+          <s-list-item>Start with <s-link href="/app/metaobject-import-export">Import or Export</s-link> to generate reference CSV files.</s-list-item>
+          <s-list-item>Use <s-link href="/app/image-migration">Image Migration</s-link> to convert external image URLs to Shopify-hosted assets.</s-list-item>
+          <s-list-item>Use <s-link href="/app/giftcard-import">Gift Card Import</s-link> when launching or replenishing gift card batches.</s-list-item>
         </s-ordered-list>
       </s-section>
 
