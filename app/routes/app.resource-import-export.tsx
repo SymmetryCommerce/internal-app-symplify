@@ -73,7 +73,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<Metaobjec
   };
 };
 
-export default function MetaobjectImportExportPage() {
+export default function ResourceImportExportPage() {
   const [activeExport, setActiveExport] = useState<ExportResource | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [includeFieldValues, setIncludeFieldValues] = useState(false);
@@ -86,7 +86,7 @@ export default function MetaobjectImportExportPage() {
   });
 
   return (
-    <s-page heading="Metaobject Import and Export">
+    <s-page heading="Resource Import / Export">
       <CollapsibleFeatureInfo
         slot="aside"
         title="Import or Export page"

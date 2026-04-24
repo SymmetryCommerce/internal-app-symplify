@@ -21,7 +21,7 @@ export default function App() {
         <s-link href="/app">Home</s-link>
         <s-link href="/app/image-migration">Image Migration</s-link>
         <s-link href="/app/giftcard-import">Gift Card Import</s-link>
-        <s-link href="/app/metaobject-import-export">Metaobject Import and Export</s-link>
+        <s-link href="/app/resource-import-export">Resource Import / Export</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
