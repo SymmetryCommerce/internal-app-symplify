@@ -84,6 +84,27 @@ export function MetaobjectImportSection({
           Supported Command values: NEW, MERGE, UPDATE, REPLACE, DELETE, IGNORE. Command is
           required on every row.
         </s-text>
+        <s-unordered-list>
+          <s-list-item>
+            NEW - Create a new metaobject. Fails if the handle already exists.
+          </s-list-item>
+          <s-list-item>
+            MERGE - Update only the specified fields; existing fields not included in the row
+            remain unchanged.
+          </s-list-item>
+          <s-list-item>
+            UPDATE - Update an existing metaobject; fails if the handle does not exist.
+          </s-list-item>
+          <s-list-item>
+            REPLACE - Fully overwrite the metaobject; unspecified fields may be cleared/reset.
+          </s-list-item>
+          <s-list-item>
+            DELETE - Remove the metaobject with the given handle.
+          </s-list-item>
+          <s-list-item>
+            IGNORE - Skip the row during import.
+          </s-list-item>
+        </s-unordered-list>
 
         <importFetcher.Form method="post" encType="multipart/form-data">
           <s-stack gap="small">

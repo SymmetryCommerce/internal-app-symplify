@@ -99,6 +99,15 @@ export default function MetaobjectImportExportPage() {
           <s-list-item>Import metaobjects via CSV using commands: NEW, MERGE, UPDATE, REPLACE, DELETE, IGNORE.</s-list-item>
           <s-list-item>Get import totals and download error logs for failed rows.</s-list-item>
         </s-unordered-list>
+        <s-text>Command reference:</s-text>
+        <s-unordered-list>
+          <s-list-item>NEW - Create a new metaobject. Fails if the handle already exists.</s-list-item>
+          <s-list-item>MERGE - Update only the specified fields; existing fields not included in the row remain unchanged.</s-list-item>
+          <s-list-item>UPDATE - Update an existing metaobject; fails if the handle does not exist.</s-list-item>
+          <s-list-item>REPLACE - Fully overwrite the metaobject; unspecified fields may be cleared/reset.</s-list-item>
+          <s-list-item>DELETE - Remove the metaobject with the given handle.</s-list-item>
+          <s-list-item>IGNORE - Skip the row during import.</s-list-item>
+        </s-unordered-list>
         <s-text>How to use:</s-text>
         <s-ordered-list>
           <s-list-item>Use export first to generate a template and understand expected structure.</s-list-item>
