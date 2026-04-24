@@ -2,6 +2,58 @@
 
 This is a template for building a [Shopify app](https://shopify.dev/docs/apps/getting-started) using [React Router](https://reactrouter.com/). It was forked from the [Shopify Remix app template](https://github.com/Shopify/shopify-app-template-remix) and converted to React Router.
 
+## Directory Structure Overview
+
+```text
+internal-app-symplify/
+├── app/                                # Main application source
+│   ├── root.tsx                        # Root layout and app shell
+│   ├── routes.ts                       # React Router flat route wiring
+│   ├── shopify.server.ts               # Shopify app configuration + auth helpers
+│   ├── db.server.ts                    # Prisma/session database setup
+│   ├── routes/                         # Route modules (loaders/actions/pages)
+│   │   ├── app.giftcard-import.tsx     # Gift card import tool page
+│   │   ├── app.image-migration.tsx     # External image migration tool page
+│   │   ├── app.resource-import-export.tsx  # Resource + metaobject import/export page
+│   │   └── app.metaobject-export-download.tsx # CSV export download endpoint
+│   ├── features/                       # Feature-first domain modules
+│   │   ├── giftcard-import/            # Gift card CSV + manual create workflows
+│   │   ├── image-migration/            # Move external images to Shopify CDN
+│   │   └── import-export-metaobjects/  # Metaobject/resource CSV export + import
+│   └── shared/                         # Reusable app-level components/types/utils
+├── prisma/
+│   ├── schema.prisma                   # Database schema for session storage
+│   └── migrations/                     # Prisma migrations
+├── public/                             # Static assets served by Vite/Remix runtime
+├── extensions/                         # Shopify app extensions
+├── package.json                        # Scripts and dependencies
+├── shopify.app.toml                    # App-level Shopify configuration
+├── shopify.web.toml                    # Web runtime/deploy settings
+├── vite.config.ts                      # Vite build/dev configuration
+└── README.md                           # Project docs
+```
+
+### Feature Folder Convention
+
+Each feature in `app/features/*` follows a consistent structure:
+
+```text
+feature-name/
+├── index.ts          # Public exports for the feature
+├── constants.ts      # Feature-specific constants
+├── types.ts          # Feature-specific TypeScript types
+├── hooks.ts          # UI state and interaction hooks
+├── utils.ts          # Pure helper utilities
+├── components/       # UI components used by the route
+└── server/           # Data access, loaders, and mutations
+```
+
+### Tool Overview
+
+- Gift Card Import: Create gift cards manually or in bulk from CSV, with validation and error feedback.
+- Image Migration: Detect external image URLs in Shopify content, upload them to Shopify Files, and replace references with CDN URLs.
+- Resource Import / Export: Export handles/metaobjects to CSV and import metaobjects using command-based actions (NEW, MERGE, UPDATE, REPLACE, DELETE, IGNORE).
+
 Rather than cloning this repo, follow the [Quick Start steps](https://github.com/Shopify/shopify-app-template-react-router#quick-start).
 
 Visit the [`shopify.dev` documentation](https://shopify.dev/docs/api/shopify-app-react-router) for more details on the React Router app package.
